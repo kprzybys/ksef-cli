@@ -214,7 +214,9 @@ public static class SendCommand
     {
         KsefApiException? api = ex as KsefApiException;
         int? code = api?.ErrorResponse?.Exception?.ExceptionDetailList?.FirstOrDefault()?.ExceptionCode;
-        return new SendResult(index, name, sessionReference, invoiceReference, null, code, api is null ? null : (int)api.StatusCode, message, null, null);
+        // Biblioteka MF zgłasza też nieczytelną odpowiedź 2xx (np. urwaną) — to nie jest błąd HTTP.
+        int? httpStatus = api is { StatusCode: < System.Net.HttpStatusCode.OK or >= System.Net.HttpStatusCode.MultipleChoices } ? (int)api.StatusCode : null;
+        return new SendResult(index, name, sessionReference, invoiceReference, null, code, httpStatus, message, null, null);
     }
 
     private static async Task<SessionInvoice> WaitForStatusAsync(

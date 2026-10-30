@@ -11,11 +11,18 @@ public sealed record KsefEnvironment(string Name, string ApiUrl)
 
     public static readonly string[] Names = ["test", "demo", "prod"];
 
-    public static KsefEnvironment Parse(string name) => name switch
+    /// <summary>Zmienna środowiska z innym adresem API (np. symulator KSeF w testach); sesje zostają przy nazwie środowiska.</summary>
+    public const string ApiUrlVariable = "KSEF_API_URL";
+
+    public static KsefEnvironment Parse(string name)
     {
-        "test" => Test,
-        "demo" => Demo,
-        "prod" => Prod,
-        _ => throw new ArgumentException($"Nieznane środowisko: {name}. Dozwolone: {string.Join(", ", Names)}."),
-    };
+        KsefEnvironment env = name switch
+        {
+            "test" => Test,
+            "demo" => Demo,
+            "prod" => Prod,
+            _ => throw new ArgumentException($"Nieznane środowisko: {name}. Dozwolone: {string.Join(", ", Names)}."),
+        };
+        return Environment.GetEnvironmentVariable(ApiUrlVariable) is { Length: > 0 } url ? env with { ApiUrl = url } : env;
+    }
 }

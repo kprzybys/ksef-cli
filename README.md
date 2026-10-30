@@ -143,6 +143,11 @@ make test-aot                                    # testy CLI z E2E na binarce Na
 - `Ksef.Fa3.Tests` wypełniają przykładowe faktury MF z submodułu, walidują je i przepuszczają przez wygenerowane klasy.
 - `KsefCli.Tests` uruchamiają zbudowany `ksef` jako proces (stdout/stderr, kody wyjścia, stdin, prawa plików,
   odmowa wypisania klucza na terminal przez `script`) oraz sprawdzają NIP i magazyn sesji, w tym odświeżanie tokenu.
+- Przebiegi `send`/`get`/`upo` bez sieci: `ksef` rozmawia przez bibliotekę MF z lokalnym fałszywym KSeF
+  (`tests/KsefCli.Tests/FakeKsef.cs`, adres podany w `KSEF_API_URL`). Fałszywy serwer odszyfrowuje wysłane faktury
+  i porównuje je z plikami, a do tego zrywa połączenie w połowie wysyłki, odrzuca faktury (440 z numerem oryginału),
+  zwraca limity 429, „faktura jeszcze niedostępna” (21165), sesje bez UPO i niebezpieczne numery stron UPO.
+  `make test-aot` uruchamia je także na binarce AOT.
 - Testy E2E (`KSEF_E2E=1`) logują się na KSeF TEST certyfikatami podpisanymi samym sobą, każdy na losowy NIP:
   pełny cykl login/session/logout, certyfikat ze stdin, pieczęć, odrzucenie certyfikatu na inny NIP,
   odświeżenie wygasłego access tokenu i to, że po `logout` refresh token przestaje działać;

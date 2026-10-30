@@ -27,7 +27,9 @@ internal static class Ksef
     /// <summary>Wiersz polecenia uruchamiający `ksef` (dla `script`, który potrzebuje jednego polecenia powłoki).</summary>
     public static string CommandLine => Binary is null ? $"dotnet {Dll}" : Binary;
 
-    public static async Task<CliResult> RunAsync(string runtimeDir, byte[]? stdin, params string[] args)
+    public static Task<CliResult> RunAsync(string runtimeDir, byte[]? stdin, params string[] args) => RunAsync(runtimeDir, stdin, null, args);
+
+    public static async Task<CliResult> RunAsync(string runtimeDir, byte[]? stdin, IReadOnlyDictionary<string, string>? environment, params string[] args)
     {
         ProcessStartInfo start = new(Binary ?? "dotnet")
         {
@@ -46,6 +48,10 @@ internal static class Ksef
         }
         start.Environment["XDG_RUNTIME_DIR"] = runtimeDir;
         start.Environment["DOTNET_CLI_UI_LANGUAGE"] = "pl";
+        foreach ((string name, string value) in environment ?? new Dictionary<string, string>())
+        {
+            start.Environment[name] = value;
+        }
 
         using Process process = Process.Start(start) ?? throw new InvalidOperationException("Nie uruchomiono ksef.");
         Task<string> stderr = process.StandardError.ReadToEndAsync();
