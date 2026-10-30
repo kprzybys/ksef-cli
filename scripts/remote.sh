@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Cel make na innej maszynie (ciężkie budowanie, macierz kontenerów): źródła rsync-iem do ~/ksef-build
+# na hoście, tam `make <cel>`, wyniki (dist/release, dist/distro-test) z powrotem do dist/.
+# Wersja i SDK z tej maszyny, bo na hoście nie ma .git (git describe) i może nie być dotnet.
+# Użycie: scripts/remote.sh <host> <cel> [ZMIENNA=wartość...]
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+host=$1
+shift
+version=$(git describe --tags --always --dirty)
+sdk=$(dotnet --version 2>/dev/null || true)
+
+rsync -a --delete --exclude=bin/ --exclude=obj/ --exclude=dist/ --exclude=.git ./ "$host:ksef-build/"
+# shellcheck disable=SC2029 # argumenty make rozwijane lokalnie celowo
+ssh "$host" "cd ksef-build && PATH=\$HOME/.dotnet:\$PATH DOTNET_SDK_VERSION=$sdk make $* VERSION=$version"
+mkdir -p dist
+for dir in release distro-test; do
+    if ssh "$host" "test -d ksef-build/dist/$dir"; then
+        rsync -a "$host:ksef-build/dist/$dir/" "dist/$dir/"
+    fi
+done

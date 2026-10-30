@@ -1,6 +1,7 @@
 # Budowanie i testy ksef. Native AOT wymaga clang i zlib (pakiety clang, zlib1g-dev);
 # `ksef show` w czasie działania potrzebuje libxslt (pakiet libxslt1.1).
-RID ?= linux-x64
+# Architektura tej maszyny (Native AOT: x64 albo arm64); inna — make aot RID=...
+RID ?= linux-$(if $(filter aarch64 arm64,$(shell uname -m)),arm64,x64)
 AOT_DIR := dist/aot
 PREFIX ?= $(HOME)/.local
 
@@ -29,12 +30,24 @@ test-aot: aot
 
 # Wydanie dla architektury tej maszyny, budowane w kontenerze AlmaLinux 9 (glibc 2.34 — działa też na starszych
 # dystrybucjach): dist/release/ksef-<wersja>-linux-<arch>.tar.gz. Wymaga podmana albo dockera.
+# REMOTE=host (domyślnie $$KSEF_REMOTE, np. export KSEF_REMOTE=serwer-budowania): oba cele na tamtej maszynie
+# przez scripts/remote.sh, wyniki wracają do dist/.
+REMOTE ?= $(KSEF_REMOTE)
+
 release:
-	scripts/release-build.sh
+ifneq ($(REMOTE),)
+	scripts/remote.sh $(REMOTE) release
+else
+	scripts/release-build.sh $(VERSION)
+endif
 
 # Binarka w czystych kontenerach kilku dystrybucji (tabela do docs/INSTALL.md); domyślnie $(AOT_DIR)/ksef.
 test-distros:
+ifneq ($(REMOTE),)
+	scripts/remote.sh $(REMOTE) test-distros BIN=$(BIN)
+else
 	scripts/test-distros.sh $(or $(BIN),$(AOT_DIR)/ksef)
+endif
 
 install: aot
 	install -Dm755 $(AOT_DIR)/ksef $(PREFIX)/bin/ksef

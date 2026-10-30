@@ -15,16 +15,23 @@ case $(uname -m) in
     aarch64) arch=arm64 ;;
     *) echo "release-build: nieobsługiwana architektura $(uname -m) (Native AOT: x64, arm64)" >&2; exit 1 ;;
 esac
-engine=${CONTAINER_ENGINE:-$(command -v podman || command -v docker || true)}
+engine=${CONTAINER_ENGINE:-$(command -v docker || command -v podman || true)}
 if [[ -z $engine ]]; then
-    echo "release-build: potrzebny podman albo docker" >&2
+    echo "release-build: potrzebny docker albo podman" >&2
     exit 1
 fi
 
-image=ksef-release-alma9
+# SDK w kontenerze = SDK hosta (w CI: zainstalowane przez setup-dotnet), żeby wydanie budował ten sam
+# kompilator AOT co testy; bez dotnet na hoście — DOTNET_SDK_VERSION albo najnowsze 10.0.
+sdk=${DOTNET_SDK_VERSION:-$(dotnet --version 2>/dev/null || true)}
+if [[ -z $sdk ]]; then
+    metadata=$(curl -sSL https://dotnetcli.blob.core.windows.net/dotnet/release-metadata/10.0/releases.json)
+    sdk=$(grep -m1 -oE '"latest-sdk": *"[^"]+"' <<<"$metadata" | sed -E 's/.*"([^"]+)"$/\1/')
+fi
+image=ksef-release-alma9:sdk-$sdk
 out=dist/release
 mkdir -p "$out"
-"$engine" build -q -t "$image" -f scripts/release.Containerfile scripts >/dev/null
+"$engine" build -q -t "$image" --build-arg DOTNET_SDK_VERSION="$sdk" -f scripts/release.Containerfile scripts >/dev/null
 
 # Źródła tylko do odczytu, budowanie na kopii w kontenerze: obj/ i bin/ z builda na hoście się nie mieszają.
 # Pakiety NuGet w nazwanym wolumenie — kolejne wydania nie pobierają ich od nowa.
@@ -48,5 +55,5 @@ mkdir -p "$out"
         tar -C /tmp -czf /out/$name.tar.gz $name
         (cd /out && sha256sum $name.tar.gz > $name.tar.gz.sha256)
         chown "$HOST_UID:$HOST_GID" /out/$name.tar.gz /out/$name.tar.gz.sha256
-        echo "glibc >= $needed: /out/$name.tar.gz"
+        echo "SDK $(dotnet --version), glibc >= $needed: /out/$name.tar.gz"
     '

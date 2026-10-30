@@ -1,0 +1,77 @@
+# Wydanie: tag v* → binarki Native AOT linux-x64 i linux-arm64, zbudowane w kontenerze AlmaLinux 9
+# (scripts/release-build.sh, glibc 2.34), sprawdzone w czystych kontenerach dystrybucji (scripts/test-distros.sh)
+# i dołączone do SZKICU wydania na GitHubie — publikuje człowiek po przejrzeniu.
+# Ręczne uruchomienie (workflow_dispatch) tylko buduje i testuje, bez wydania.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+jobs:
+  draft:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Szkic wydania
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --verify-tag --generate-notes --title "ksef $GITHUB_REF_NAME"
+
+  build:
+    needs: draft
+    # Bez taga (workflow_dispatch) szkicu nie ma — budujemy mimo to.
+    if: ${{ !cancelled() && (needs.draft.result == 'success' || needs.draft.result == 'skipped') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x64
+            # Arch Linux nie ma oficjalnego obrazu arm64 — tylko na x64.
+            images: ubuntu:22.04 ubuntu:24.04 ubuntu:26.04 debian:12 debian:13 almalinux:9 almalinux:10 fedora:latest archlinux:latest opensuse/tumbleweed
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            images: ubuntu:22.04 ubuntu:24.04 ubuntu:26.04 debian:12 debian:13 almalinux:9 almalinux:10 fedora:latest opensuse/tumbleweed
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Bez zagnieżdżonego ksef-pdf-generator w bibliotece MF; pełna historia dla git describe.
+          submodules: true
+          fetch-depth: 0
+      # SDK w kontenerze wydania = to SDK (release-build.sh bierze `dotnet --version`), jak w CI.
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - name: Budowanie (kontener AlmaLinux 9)
+        run: |
+          if [[ $GITHUB_REF_TYPE == tag ]]; then
+            scripts/release-build.sh "${GITHUB_REF_NAME#v}"
+          else
+            scripts/release-build.sh
+          fi
+      - name: Test w czystych kontenerach
+        run: |
+          tar -C dist/release -xzf dist/release/ksef-*-linux-${{ matrix.arch }}.tar.gz
+          # shellcheck disable=SC2086 # lista obrazów rozdzielona spacjami
+          scripts/test-distros.sh dist/release/ksef-*-linux-${{ matrix.arch }}/ksef ${{ matrix.images }} | tee dist/distros.md
+          cat dist/distros.md >> "$GITHUB_STEP_SUMMARY"
+          ! grep -q "BŁĄD" dist/distros.md
+      - name: Dołączenie do szkicu wydania
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" dist/release/*.tar.gz dist/release/*.tar.gz.sha256

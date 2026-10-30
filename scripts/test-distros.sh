@@ -13,9 +13,9 @@ if [[ ${#images[@]} == 0 ]]; then
     images=(ubuntu:22.04 ubuntu:24.04 ubuntu:26.04 debian:12 debian:13 almalinux:9 almalinux:10
         fedora:latest archlinux:latest opensuse/tumbleweed)
 fi
-engine=${CONTAINER_ENGINE:-$(command -v podman || command -v docker || true)}
+engine=${CONTAINER_ENGINE:-$(command -v docker || command -v podman || true)}
 if [[ -z $engine ]]; then
-    echo "test-distros: potrzebny podman albo docker" >&2
+    echo "test-distros: potrzebny docker albo podman" >&2
     exit 1
 fi
 

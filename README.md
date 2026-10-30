@@ -4,6 +4,17 @@ CLI do obsługi KSeF 2.0 na oficjalnej bibliotece MF
 [`CIRFMF/ksef-client-csharp`](https://github.com/CIRFMF/ksef-client-csharp) (MIT),
 budowanej ze źródeł — bez paczek z GitHub Packages.
 
+## Instalacja
+
+Gotowa binarka (Native AOT, linux-x64 i linux-arm64, glibc ≥ 2.34) jest w wydaniach na GitHubie.
+Do działania potrzebuje ICU, OpenSSL 3, certyfikatów CA i — dla `ksef show` — libxslt:
+
+```bash
+scripts/install-deps.sh --yes     # pakiety do uruchomienia; --build: do budowania ze źródeł
+```
+
+Szczegóły dla dystrybucji, budowanie wydań (`make release`) i sprawdzone systemy: [docs/INSTALL.md](docs/INSTALL.md).
+
 ## Wymagania
 
 - .NET SDK 10 (`sudo apt install dotnet-sdk-10.0`). SDK 8 nie zbuduje biblioteki: jej projekty
