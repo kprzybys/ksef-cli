@@ -43,7 +43,7 @@ mkdir -p "$out"
     "$image" bash -euo pipefail -c '
         rsync -a --exclude=bin/ --exclude=obj/ --exclude=dist/ --exclude=.git/ /src/ /work/
         cd /work
-        make aot RID=linux-$ARCH
+        make aot RID=linux-$ARCH KSEF_VERSION="$KSEF_VERSION"
         needed=$(objdump -T dist/aot/ksef | grep -oE "GLIBC_[0-9.]+" | sed "s/GLIBC_//" | sort -V | tail -1)
         if [[ $(printf "%s\n%s\n" "$needed" "$MAX_GLIBC" | sort -V | tail -1) != "$MAX_GLIBC" ]]; then
             echo "release-build: binarka wymaga glibc $needed > $MAX_GLIBC" >&2

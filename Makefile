@@ -18,10 +18,12 @@ test-e2e:
 	KSEF_E2E=1 dotnet test --solution ksef-app.slnx -c Release
 
 # Jedna natywna binarka $(AOT_DIR)/ksef (bez .NET na maszynie docelowej). Nowe ostrzeżenie kompilatora
-# AOT (spoza src/KsefCli/aot-warnings.txt) przerywa budowanie.
+# AOT (spoza src/KsefCli/aot-warnings.txt) przerywa budowanie. KSEF_VERSION=… trafia do `ksef --version`
+# (nie VERSION: make eksportuje zmienne z wiersza poleceń, a MSBuild wziąłby ją za wersję pakietu).
 aot:
 	rm -rf $(AOT_DIR) && mkdir -p $(AOT_DIR)
-	dotnet publish src/KsefCli -c Release -r $(RID) -p:KsefAot=true -o $(AOT_DIR) "-flp:logfile=$(AOT_DIR).log;verbosity=normal"
+	dotnet publish src/KsefCli -c Release -r $(RID) -p:KsefAot=true -o $(AOT_DIR) "-flp:logfile=$(AOT_DIR).log;verbosity=normal" \
+		$(if $(KSEF_VERSION),-p:InformationalVersion=$(KSEF_VERSION))
 	scripts/check-aot-warnings.sh $(AOT_DIR).log src/KsefCli/aot-warnings.txt
 
 # Te same testy CLI (z E2E) na binarce AOT — po każdej zmianie typów JSON i po podbiciu biblioteki MF.
@@ -38,7 +40,7 @@ release:
 ifneq ($(REMOTE),)
 	scripts/remote.sh $(REMOTE) release
 else
-	scripts/release-build.sh $(VERSION)
+	scripts/release-build.sh $(KSEF_VERSION)
 endif
 
 # Binarka w czystych kontenerach kilku dystrybucji (tabela do docs/INSTALL.md); domyślnie $(AOT_DIR)/ksef.
