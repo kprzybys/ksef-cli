@@ -28,7 +28,7 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.3  # setup-uv nie ma ruchomego tagu v10
       - uses: actions/cache@v6
         with:
           path: ~/.cache/pre-commit
