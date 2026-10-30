@@ -80,6 +80,12 @@ internal static class KsefJson
 [JsonSerializable(typeof(KSeF.Client.Core.Models.AuthStatus))]
 [JsonSerializable(typeof(KSeF.Client.Core.Models.Authorization.AuthenticationOperationStatusResponse))]
 [JsonSerializable(typeof(KSeF.Client.Core.Models.Authorization.RefreshTokenResponse))]
+// login --token-file: żądanie z zaszyfrowanym tokenem KSeF.
+[JsonSerializable(typeof(KSeF.Client.Core.Models.Authorization.AuthenticationKsefTokenRequest))]
+// Generowanie i unieważnianie tokenów KSeF (dziś tylko testy E2E logowania tokenem).
+[JsonSerializable(typeof(KSeF.Client.Core.Models.Authorization.KsefTokenRequest))]
+[JsonSerializable(typeof(KSeF.Client.Core.Models.Authorization.KsefTokenResponse))]
+[JsonSerializable(typeof(KSeF.Client.Core.Models.Authorization.AuthenticationKsefToken))]
 [JsonSerializable(typeof(KSeF.Client.Core.Models.Invoices.InvoiceQueryFilters))]
 [JsonSerializable(typeof(KSeF.Client.Core.Models.Invoices.PagedInvoiceResponse))]
 // send: sesja interaktywna i status faktury.

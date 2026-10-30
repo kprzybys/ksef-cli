@@ -6,6 +6,7 @@ using KSeF.Client.Api.Builders.Auth;
 using KSeF.Client.Api.Services;
 using KSeF.Client.Core.Exceptions;
 using KSeF.Client.Core.Interfaces.Clients;
+using KSeF.Client.Core.Interfaces.Services;
 using KSeF.Client.Core.Models;
 using KSeF.Client.Core.Models.ApiResponses;
 using KSeF.Client.Core.Models.Authorization;
@@ -14,8 +15,10 @@ using Microsoft.Extensions.DependencyInjection;
 namespace KsefCli.Commands;
 
 /// <summary>
-/// `ksef login` — uwierzytelnienie certyfikatem (podpis XAdES żądania z wyzwaniem KSeF)
-/// w kontekście NIP-u; tokeny sesji zapisuje w <see cref="SessionStore"/>. Przy sukcesie milczy.
+/// `ksef login` — uwierzytelnienie w kontekście NIP-u certyfikatem (podpis XAdES żądania z wyzwaniem KSeF)
+/// albo tokenem KSeF (zaszyfrowanym kluczem publicznym MF razem z czasem wyzwania); tokeny sesji zapisuje
+/// w <see cref="SessionStore"/>. Przy sukcesie milczy. Token KSeF to sekret — tylko z pliku albo stdin,
+/// nigdy z argumentu (widać go w `ps` i historii powłoki).
 /// </summary>
 public static class LoginCommand
 {
@@ -29,30 +32,118 @@ public static class LoginCommand
         Option<string> certOption = new("--cert")
         {
             Description = "Plik PEM z certyfikatem i kluczem prywatnym; `-` = stdin",
-            Required = true,
+        };
+        Option<string> tokenOption = new("--token-file")
+        {
+            Description = "Plik z tokenem KSeF (pierwszy niepusty wiersz); `-` = stdin, np. `pass show ksef/token | ksef login --token-file -`",
         };
 
-        Command command = new("login", "Logowanie do KSeF certyfikatem (XAdES); sesja trafia do $XDG_RUNTIME_DIR/ksef");
+        Command command = new("login", "Logowanie do KSeF certyfikatem (XAdES) albo tokenem KSeF; sesja trafia do $XDG_RUNTIME_DIR/ksef");
         command.Options.Add(nipOption);
         command.Options.Add(certOption);
-        command.SetAction(async (parseResult, cancellationToken) => await RunAsync(
-            KsefEnvironment.Parse(parseResult.GetRequiredValue(envOption)),
-            parseResult.GetRequiredValue(nipOption),
-            parseResult.GetRequiredValue(certOption),
-            cancellationToken));
+        command.Options.Add(tokenOption);
+        command.Validators.Add(result =>
+        {
+            if ((result.GetValue(certOption) is null) == (result.GetValue(tokenOption) is null))
+            {
+                result.AddError("Podaj dokładnie jedno: --cert (certyfikat) albo --token-file (token KSeF).");
+            }
+        });
+        command.SetAction(async (parseResult, cancellationToken) => parseResult.GetValue(tokenOption) is { } tokenPath
+            ? await RunWithTokenAsync(
+                KsefEnvironment.Parse(parseResult.GetRequiredValue(envOption)),
+                parseResult.GetRequiredValue(nipOption),
+                tokenPath,
+                cancellationToken)
+            : await RunAsync(
+                KsefEnvironment.Parse(parseResult.GetRequiredValue(envOption)),
+                parseResult.GetRequiredValue(nipOption),
+                parseResult.GetRequiredValue(certOption),
+                cancellationToken));
         return command;
     }
 
-    private static async Task<int> RunAsync(KsefEnvironment env, string nip, string certPath, CancellationToken cancellationToken)
+    private static bool CanSaveSession()
     {
         try
         {
             // Najpierw miejsce na sesję: bez niego udane logowanie zostawiłoby w KSeF sesję bez tokenów u nas.
             _ = SessionStore.Directory;
+            return true;
         }
         catch (SessionException ex)
         {
             CliIo.Error(ex.Message);
+            return false;
+        }
+    }
+
+    private static async Task<int> RunWithTokenAsync(KsefEnvironment env, string nip, string tokenPath, CancellationToken cancellationToken)
+    {
+        if (!CanSaveSession())
+        {
+            return 1;
+        }
+
+        string? token;
+        try
+        {
+            token = Encoding.UTF8.GetString(CliIo.ReadAllBytes(tokenPath))
+                .Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                .FirstOrDefault();
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            // Bez ścieżki w komunikacie: ktoś mógł podać tu sam token zamiast pliku.
+            CliIo.Error("--token-file: nie ma takiego pliku — podaj plik z tokenem albo `-` (stdin), nie sam token.");
+            return 1;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            CliIo.Error($"--token-file: nie udało się wczytać tokenu: {ex.Message}");
+            return 1;
+        }
+        if (token is null)
+        {
+            CliIo.Error($"{CliIo.DisplayName(tokenPath)}: brak tokenu KSeF.");
+            return 1;
+        }
+
+        try
+        {
+            await using ServiceProvider provider = await KsefServices.CreateWithCryptographyAsync(env, cancellationToken);
+            using IServiceScope scope = provider.CreateScope();
+            IAuthorizationClient authorization = scope.ServiceProvider.GetRequiredService<IAuthorizationClient>();
+            ICryptographyService crypto = scope.ServiceProvider.GetRequiredService<ICryptographyService>();
+
+            AuthenticationChallengeResponse challenge = await authorization.GetAuthChallengeAsync(cancellationToken);
+            // Token z czasem wyzwania, zaszyfrowany kluczem MF (RSA-OAEP SHA-256) — KSeF odrzuca powtórzone żądania.
+            byte[] encrypted = crypto.EncryptKsefTokenWithRSAUsingPublicKey(
+                Encoding.UTF8.GetBytes($"{token}|{challenge.Timestamp.ToUnixTimeMilliseconds()}"));
+            IAuthKsefTokenRequestBuilderWithEncryptedToken request = AuthKsefTokenRequestBuilder.Create()
+                .WithChallenge(challenge.Challenge)
+                .WithContext(AuthenticationTokenContextIdentifierType.Nip, nip)
+                .WithEncryptedToken(Convert.ToBase64String(encrypted));
+            if (crypto.KsefTokenPublicKeyId is { } publicKeyId)
+            {
+                request = request.WithPublicKeyId(publicKeyId);
+            }
+
+            SignatureResponse submission = await authorization.SubmitKsefTokenAuthRequestAsync(request.Build(), cancellationToken);
+            SessionStore.Save(await CompleteAsync(authorization, env, nip, submission, cancellationToken));
+            return 0;
+        }
+        catch (Exception ex) when (ex is KsefApiException or HttpRequestException or AuthenticationFailedException or SessionException or ArgumentException)
+        {
+            CliIo.Error($"logowanie NIP {nip} ({env.Name}) tokenem KSeF nieudane: {ex.Message}");
+            return 1;
+        }
+    }
+
+    private static async Task<int> RunAsync(KsefEnvironment env, string nip, string certPath, CancellationToken cancellationToken)
+    {
+        if (!CanSaveSession())
+        {
             return 1;
         }
 
@@ -102,6 +193,13 @@ public static class LoginCommand
         string signedXml = SignatureService.Sign(AuthenticationTokenRequestSerializer.SerializeToXmlString(request), certificate);
 
         SignatureResponse submission = await authorization.SubmitXadesAuthRequestAsync(signedXml, cancellationToken: cancellationToken);
+        return await CompleteAsync(authorization, env, nip, submission, cancellationToken);
+    }
+
+    /// <summary>Wspólny koniec obu metod: czekanie na weryfikację w KSeF i wymiana na tokeny sesji.</summary>
+    private static async Task<KsefSession> CompleteAsync(
+        IAuthorizationClient authorization, KsefEnvironment env, string nip, SignatureResponse submission, CancellationToken cancellationToken)
+    {
         await WaitForCompletionAsync(authorization, submission, cancellationToken);
 
         AuthenticationOperationStatusResponse tokens = await authorization.GetAccessTokenAsync(submission.AuthenticationToken.Token, cancellationToken);

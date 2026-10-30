@@ -112,6 +112,17 @@ ksef logout
 Certyfikat można też podać na stdin (`--cert -`), np. prosto z sejfu, więc `ksef` nie musi wiedzieć,
 gdzie leży klucz. Na DEMO i PROD potrzebny jest certyfikat kwalifikowany albo certyfikat KSeF.
 
+Druga metoda to token KSeF, wygenerowany w aplikacji KSeF albo przez API po zalogowaniu certyfikatem:
+
+```bash
+pass show ksef/token | ksef login --nip 5908996669 --token-file -
+ksef login --nip 5908996669 --token-file ~/.config/ksef/token   # albo z pliku (0600)
+```
+
+Token jest sekretem, więc `ksef` przyjmuje go tylko z pliku albo stdin, nigdy jako argument (byłby widoczny
+w `ps` i historii powłoki). Liczy się pierwszy niepusty wiersz. KSeF dostaje token zaszyfrowany kluczem
+publicznym MF razem z czasem wyzwania.
+
 Sesje (access token ważny ok. 15 min, refresh token 7 dni) to stan narzędzia, nie trwały sekret:
 `$XDG_RUNTIME_DIR/ksef/<środowisko>-<NIP>.json` z prawami 0600 — katalog w RAM, znika po wylogowaniu
 z systemu. Komendy wymagające logowania same odświeżają access token. Przy kilku sesjach w jednym

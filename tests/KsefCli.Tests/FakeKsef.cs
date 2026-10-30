@@ -49,22 +49,37 @@ internal sealed class FakeKsef : IDisposable
         return Convert.ToBase64String(certificate.Export(X509ContentType.Cert));
     });
 
-    private readonly HttpListener listener = new();
+    private HttpListener listener = new();
     private readonly List<(string Method, Regex Path, Func<FakeRequest, Match, FakeResponse> Handler)> routes = [];
     private readonly List<FakeRequest> requests = [];
     private readonly Task loop;
 
     public FakeKsef()
     {
-        int port;
-        using (TcpListener probe = new(IPAddress.Loopback, 0))
+        // Wolny port bierzemy od systemu i zwalniamy przed startem listenera — w tej chwili może go zająć
+        // inny test albo połączenie wychodzące, więc przy kolizji próbujemy na kolejnym.
+        for (int attempt = 1; ; attempt++)
         {
-            probe.Start();
-            port = ((IPEndPoint)probe.LocalEndpoint).Port;
+            int port;
+            using (TcpListener probe = new(IPAddress.Loopback, 0))
+            {
+                probe.Start();
+                port = ((IPEndPoint)probe.LocalEndpoint).Port;
+            }
+            Url = $"http://127.0.0.1:{port}";
+            // Po nieudanym starcie listener nie nadaje się do ponownego użycia — zawsze nowy.
+            listener = new HttpListener();
+            listener.Prefixes.Add(Url + "/");
+            try
+            {
+                listener.Start();
+                break;
+            }
+            catch (HttpListenerException) when (attempt < 10)
+            {
+                listener.Close();
+            }
         }
-        Url = $"http://127.0.0.1:{port}";
-        listener.Prefixes.Add(Url + "/");
-        listener.Start();
 
         // Klucz publiczny MF do szyfrowania faktur — pobierany przy starcie `send`.
         On("GET", "security/public-key-certificates", (_, _) => FakeResponse.Json(new[]
@@ -75,7 +90,7 @@ internal sealed class FakeKsef : IDisposable
         loop = Task.Run(ServeAsync);
     }
 
-    public string Url { get; }
+    public string Url { get; private set; } = "";
 
     public IReadOnlyList<FakeRequest> Requests
     {
@@ -134,6 +149,10 @@ internal sealed class FakeKsef : IDisposable
             Convert.FromBase64String((string)sendInvoice.Json!["encryptedInvoiceContent"]!),
             Convert.FromBase64String((string)encryption["initializationVector"]!));
     }
+
+    /// <summary>Token KSeF z żądania logowania tokenem (`token|znacznik czasu wyzwania w ms`, RSA-OAEP SHA-256).</summary>
+    public static string DecryptKsefToken(FakeRequest submission) =>
+        Encoding.UTF8.GetString(EncryptionKey.Decrypt(Convert.FromBase64String((string)submission.Json!["encryptedToken"]!), RSAEncryptionPadding.OaepSHA256));
 
     public Task<CliResult> RunAsync(string runtimeDir, byte[]? stdin, params string[] args) =>
         Ksef.RunAsync(runtimeDir, stdin, new Dictionary<string, string> { ["KSEF_API_URL"] = Url }, args);

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using KSeF.Client.Core.Exceptions;
 using KSeF.Client.Core.Interfaces.Clients;
+using KSeF.Client.Core.Models.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace KsefCli.Tests;
@@ -120,6 +121,59 @@ public class KsefTestEnvironmentTests : IDisposable
         CliResult result = await Ksef("login", "--nip", nip, "--cert", pem);
 
         Assert.True(result.ExitCode == 0, result.Stderr);
+    }
+
+    [Fact]
+    public async Task Login_KsefToken_WorksUntilRevoked()
+    {
+        // Token KSeF generuje się w sesji z certyfikatu — tak, jak robi to użytkownik w aplikacji MF.
+        string nip = TestData.RandomNip();
+        await LoginAsync(nip);
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        await using ServiceProvider provider = KsefServices.Create(KsefEnvironment.Test);
+        using IServiceScope scope = provider.CreateScope();
+        IKSeFClient client = scope.ServiceProvider.GetRequiredService<IKSeFClient>();
+        string certificateAccess = SessionStore.Resolve("test", nip).AccessToken.Token;
+        KsefTokenResponse token = await client.GenerateKsefTokenAsync(
+            new KsefTokenRequest { Permissions = [KsefTokenPermissionType.InvoiceRead, KsefTokenPermissionType.InvoiceWrite], Description = "ksef-cli E2E" },
+            certificateAccess, cancellationToken);
+        await WaitForTokenStatusAsync(client, token.ReferenceNumber, certificateAccess, AuthenticationKsefTokenStatus.Active);
+        Assert.Equal(0, (await Ksef("logout", "--nip", nip)).ExitCode);
+
+        string tokenFile = Path.Combine(runtime.Path, "ksef-token");
+        File.WriteAllText(tokenFile, token.Token + "\n");
+        CliResult login = await Ksef("login", "--nip", nip, "--token-file", tokenFile);
+        Assert.True(login.ExitCode == 0, login.Stderr);
+        Assert.Empty(login.StdoutBytes);
+
+        // Sesja z tokenu działa jak każda inna: zapytanie o faktury przechodzi.
+        CliResult list = await Ksef("list", "--subject", "seller");
+        Assert.True(list.ExitCode == 0, list.Stderr);
+
+        string tokenAccess = SessionStore.Resolve("test", nip).AccessToken.Token;
+        await client.RevokeKsefTokenAsync(token.ReferenceNumber, tokenAccess, cancellationToken);
+        await WaitForTokenStatusAsync(client, token.ReferenceNumber, tokenAccess, AuthenticationKsefTokenStatus.Revoked);
+        Assert.Equal(0, (await Ksef("logout", "--nip", nip)).ExitCode);
+
+        CliResult revoked = await Ksef("login", "--nip", nip, "--token-file", tokenFile);
+        Assert.Equal(1, revoked.ExitCode);
+        Assert.StartsWith($"ksef: logowanie NIP {nip} (test) tokenem KSeF nieudane: ", revoked.Stderr);
+        Assert.DoesNotContain(token.Token, revoked.Stderr);
+    }
+
+    private static async Task WaitForTokenStatusAsync(IKSeFClient client, string reference, string accessToken, AuthenticationKsefTokenStatus expected)
+    {
+        DateTime deadline = DateTime.UtcNow.AddSeconds(60);
+        while (true)
+        {
+            AuthenticationKsefToken current = await client.GetKsefTokenAsync(reference, accessToken, TestContext.Current.CancellationToken);
+            if (current.Status == expected)
+            {
+                return;
+            }
+            Assert.True(DateTime.UtcNow < deadline, $"token {reference}: status {current.Status}, oczekiwano {expected}");
+            await Task.Delay(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+        }
     }
 
     [Fact]
