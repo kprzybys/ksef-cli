@@ -74,6 +74,11 @@ public static partial class LoginCommand
         catch (Exception ex) when (ex is CryptographicException or ArgumentException)
         {
             string native = capture.Stop();
+            if (MissingModule(viaProvider, ex) is { } missing)
+            {
+                CliIo.Error($"{key.Uri}: {missing}");
+                return false;
+            }
             string Mask(string text) => pin is null ? text : text.Replace(Uri.EscapeDataString(pin), "***", StringComparison.Ordinal).Replace(pin, "***", StringComparison.Ordinal);
             CliIo.Error($"{key.Uri}: nie udało się użyć klucza przez OpenSSL {(viaProvider ? "provider" : "engine")} pkcs11 "
                 + $"(zły PIN, brak karty albo klucz nie pasuje do certyfikatu?): {Mask(ex.Message)}");
@@ -83,6 +88,55 @@ public static partial class LoginCommand
             }
             return false;
         }
+    }
+
+    /// <summary>
+    /// Brak samego modułu OpenSSL to najczęstszy błąd na świeżym systemie, a OpenSSL zgłasza go surowo
+    /// („no such engine”, „reason(524325)”) — mówimy wprost, czego brakuje i jak to obejść.
+    /// </summary>
+    private static string? MissingModule(bool viaProvider, Exception ex)
+    {
+        if (!viaProvider && ex.Message.Contains("no such engine", StringComparison.Ordinal))
+        {
+            return "OpenSSL nie ma engine'u pkcs11 — zainstaluj libp11 (Debian/Ubuntu: libengine-pkcs11-openssl, "
+                + "Fedora/RHEL 9: openssl-pkcs11) albo użyj --key-via provider (pakiet pkcs11-provider).";
+        }
+        if (viaProvider && !OpenSslProvider.IsAvailable("pkcs11"))
+        {
+            return "OpenSSL nie ma providera pkcs11 — zainstaluj pkcs11-provider albo użyj --key-via engine "
+                + "(Debian/Ubuntu: libengine-pkcs11-openssl).";
+        }
+        return null;
+    }
+
+    /// <summary>Czy OpenSSL potrafi załadować provider (ten sam libcrypto, którego używa .NET).</summary>
+    private static class OpenSslProvider
+    {
+        public static bool IsAvailable(string name)
+        {
+            try
+            {
+                IntPtr provider = TryLoad(IntPtr.Zero, [.. Encoding.UTF8.GetBytes(name), 0], 1);
+                if (provider == IntPtr.Zero)
+                {
+                    return false;
+                }
+                _ = Unload(provider);
+                return true;
+            }
+            catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
+            {
+                return true; // Nie umiemy sprawdzić — zostaje zwykły komunikat błędu.
+            }
+        }
+
+#pragma warning disable SYSLIB1054 // Jak w NativeStderrCapture: bez marshallingu wskaźników.
+        [DllImport("libcrypto.so.3", EntryPoint = "OSSL_PROVIDER_try_load")]
+        private static extern IntPtr TryLoad(IntPtr libraryContext, byte[] name, int retainFallbacks);
+
+        [DllImport("libcrypto.so.3", EntryPoint = "OSSL_PROVIDER_unload")]
+        private static extern int Unload(IntPtr provider);
+#pragma warning restore SYSLIB1054
     }
 
     /// <summary>Natywne stderr (fd 2) do pamięci (memfd) na czas operacji; .NET pisze swoje komunikaty po <see cref="Stop"/>.</summary>

@@ -160,6 +160,7 @@ ksef login --nip 5908996669 --cert cert.pem --key 'pkcs11:token=Karta;object=Pod
 - `--key-via engine` (libp11, pakiet `libengine-pkcs11-openssl`) albo `provider` (`pkcs11-provider`).
   Domyślnie engine na OpenSSL < 3.2, provider na nowszym. pkcs11-provider 0.3 na OpenSSL 3.0 (Ubuntu 24.04)
   zawiesza się z SoftHSM, dlatego tam engine.
+  Gdy w systemie brakuje wybranego modułu, `ksef` podaje pakiet do zainstalowania i drugą możliwość `--key-via`.
 - Testy (`LoginPkcs11Tests`, E2E `Login_KeyOnPkcs11Token`) zakładają tymczasowy token SoftHSM (`softhsm2`);
   bez niego się pomijają.
 

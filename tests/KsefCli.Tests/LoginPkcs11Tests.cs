@@ -197,4 +197,26 @@ public class LoginKeyOptionTests
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains(expected, result.Stderr, StringComparison.Ordinal);
     }
+
+    [Theory]
+    [InlineData("engine", "OpenSSL nie ma engine'u pkcs11", "--key-via provider")]
+    [InlineData("provider", "OpenSSL nie ma providera pkcs11", "--key-via engine")]
+    public async Task Login_MissingOpenSslModule_NamesPackageAndAlternative(string via, string expected, string alternative)
+    {
+        using TempDir dir = new();
+        string cert = dir.File("cert.pem");
+        string pin = dir.File("pin");
+        await File.WriteAllTextAsync(pin, "1234", TestContext.Current.CancellationToken);
+        Assert.Equal(0, (await Ksef.RunAsync(dir.Path, "cert", "new", "--nip", "5908996669", "-o", cert)).ExitCode);
+        string empty = dir.File("brak-modulow");
+        Directory.CreateDirectory(empty);
+        Dictionary<string, string> environment = new(StringComparer.Ordinal) { ["OPENSSL_ENGINES"] = empty, ["OPENSSL_MODULES"] = empty };
+
+        CliResult result = await Ksef.RunAsync(dir.Path, null, environment,
+            "login", "--nip", "5908996669", "--cert", cert, "--key", SoftHsmToken.KeyUri, "--pin-file", pin, "--key-via", via);
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Contains(expected, result.Stderr, StringComparison.Ordinal);
+        Assert.Contains(alternative, result.Stderr, StringComparison.Ordinal);
+    }
 }
