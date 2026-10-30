@@ -23,10 +23,21 @@ public class Fa3HtmlTests
         Assert.Contains("<span class=\"nazwa-dla-kodu\">(POLSKA)</span>", html);
     }
 
-    private static string Render(string xml)
+    [Fact]
+    public void Render_WritesUtf8WithoutBom()
+    {
+        // Wynik idzie na stdout — BOM psułby potoki.
+        byte[] html = RenderBytes(TestInvoices.Fill("invoice-template-fa-3.xml"));
+
+        Assert.False(html.AsSpan().StartsWith((ReadOnlySpan<byte>)[0xEF, 0xBB, 0xBF]));
+    }
+
+    private static string Render(string xml) => Encoding.UTF8.GetString(RenderBytes(xml));
+
+    private static byte[] RenderBytes(string xml)
     {
         using MemoryStream output = new();
         Fa3Html.Render(new MemoryStream(Encoding.UTF8.GetBytes(xml)), output);
-        return Encoding.UTF8.GetString(output.ToArray());
+        return output.ToArray();
     }
 }

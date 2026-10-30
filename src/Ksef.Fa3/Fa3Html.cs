@@ -1,3 +1,4 @@
+using System.Text;
 using System.Xml;
 using System.Xml.Xsl;
 
@@ -16,7 +17,10 @@ public static class Fa3Html
     {
         XmlReaderSettings readerSettings = new() { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null };
         using XmlReader reader = XmlReader.Create(xml, readerSettings);
-        using XmlWriter writer = XmlWriter.Create(html, Transform.Value.OutputSettings);
+        // Bez BOM: wynik idzie też na stdout, gdzie BOM psuje potoki (grep, sklejanie plików).
+        XmlWriterSettings writerSettings = Transform.Value.OutputSettings!.Clone();
+        writerSettings.Encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+        using XmlWriter writer = XmlWriter.Create(html, writerSettings);
         // Resolver obsługuje document() w arkuszu (słowniki krajów, walut, urzędów) z zasobów wbudowanych.
         Transform.Value.Transform(reader, null, writer, Resolver);
     }

@@ -24,9 +24,26 @@ nie trzeba pobierać.
 
 | Komenda | Logowanie | Opis |
 |---|---|---|
-| `ksef status [-e test\|demo\|prod]` | nie | Komunikaty Latarni MF o dostępności KSeF + czy API środowiska odpowiada. Kod wyjścia: 0 dostępny, 2 KSeF niedostępny/prace, 1 błąd połączenia. |
-| `ksef validate <pliki>...` | nie (offline) | Kontrola przed wysyłką: wymagania KSeF (UTF-8 bez BOM, kodowanie w prologu, brak instrukcji przetwarzania, niezalecane znaki Unicode, limit 1 MB / 3 MB z załącznikiem) + schemat FA(3). Kod wyjścia: 0 wszystkie poprawne, 1 jest błąd. |
-| `ksef show <plik> [-o plik.html] [--open]` | nie (offline) | Podgląd faktury w HTML oficjalnym arkuszem MF (`styl.xsl`). |
+| `ksef status [-e test\|demo\|prod] [--json]` | nie | Komunikaty Latarni MF o dostępności KSeF + czy API środowiska odpowiada. Kod wyjścia: 0 dostępny, 2 KSeF niedostępny/prace, 1 błąd połączenia. |
+| `ksef validate [pliki\|-]... [-v] [--json]` | nie (offline) | Kontrola przed wysyłką: wymagania KSeF (UTF-8 bez BOM, kodowanie w prologu, brak instrukcji przetwarzania, niezalecane znaki Unicode, limit 1 MB / 3 MB z załącznikiem) + schemat FA(3). Przy sukcesie milczy; błędy na stderr jako `plik:wiersz:kolumna: ...`. Kod wyjścia: 0 wszystkie poprawne, 1 jest błąd. |
+| `ksef show [plik\|-] [-o plik.html]` | nie (offline) | Podgląd faktury w HTML oficjalnym arkuszem MF (`styl.xsl`), domyślnie na stdout. |
+
+## Zasady
+
+`ksef` robi jedną rzecz: przenosi faktury między plikami a KSeF (plus offline kontrola i podgląd pliku FA(3)).
+Nie wystawia faktur, nie księguje i nie trzyma własnej bazy — to zadania innych narzędzi.
+
+- wynik na stdout, komunikaty i błędy na stderr (z prefiksem `ksef:`), przy sukcesie bez zbędnych komunikatów;
+- `-` albo brak pliku oznacza stdin/stdout, więc komendy łączą się w potoki;
+- `--json` daje wynik dla skryptów (`jq`), domyślnie zwięzły tekst dla człowieka;
+- stałe kody wyjścia, żadnych pytań interaktywnych;
+- sekrety nigdy w argumentach wywołania.
+
+```bash
+ksef validate faktury/*.xml && echo wszystkie poprawne
+ksef show faktura.xml > faktura.html && xdg-open faktura.html
+ksef status --json | jq -r .lighthouse.status
+```
 
 Domyślne środowisko: `test`.
 

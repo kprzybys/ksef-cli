@@ -13,18 +13,29 @@ namespace KsefCli.Commands;
 /// </summary>
 public static class StatusCommand
 {
+    private sealed record LighthouseResult(string? Status, IReadOnlyList<Message> Messages, string? Error);
+
+    private sealed record CertificateResult(IReadOnlyList<string> Usage, DateTimeOffset ValidTo);
+
+    private sealed record ApiResult(string Environment, string Url, bool Reachable, IReadOnlyList<CertificateResult> Certificates, string? Error);
+
+    private sealed record StatusResult(LighthouseResult Lighthouse, ApiResult Api);
+
     public static Command Create(Option<string> envOption)
     {
-        Command command = new("status", "Dostępność KSeF (Latarnia MF) i połączenie z API środowiska");
+        Option<bool> jsonOption = CliIo.JsonOption();
+
+        Command command = new("status", "Dostępność KSeF (Latarnia MF) i połączenie z API środowiska. Kod wyjścia: 0 dostępny, 2 niedostępny/prace, 1 błąd połączenia");
+        command.Options.Add(jsonOption);
         command.SetAction(async (parseResult, cancellationToken) =>
         {
             KsefEnvironment env = KsefEnvironment.Parse(parseResult.GetRequiredValue(envOption));
-            return await RunAsync(env, cancellationToken);
+            return await RunAsync(env, parseResult.GetValue(jsonOption), cancellationToken);
         });
         return command;
     }
 
-    private static async Task<int> RunAsync(KsefEnvironment env, CancellationToken cancellationToken)
+    private static async Task<int> RunAsync(KsefEnvironment env, bool json, CancellationToken cancellationToken)
     {
         ServiceCollection services = new();
         services.AddKSeFClient(options => options.BaseUrl = env.ApiUrl);
@@ -35,47 +46,80 @@ public static class StatusCommand
         await using ServiceProvider provider = services.BuildServiceProvider();
         using IServiceScope scope = provider.CreateScope();
 
-        int exitCode = 0;
+        StatusResult result = new(
+            await CheckLighthouseAsync(scope.ServiceProvider.GetRequiredService<ILighthouseClient>(), cancellationToken),
+            await CheckApiAsync(env, scope.ServiceProvider.GetRequiredService<ICryptographyClient>(), cancellationToken));
 
-        Console.WriteLine("Latarnia MF (dostępność KSeF):");
+        if (json)
+        {
+            CliIo.WriteJson(result);
+        }
+        else
+        {
+            Print(result);
+        }
+
+        if (result.Lighthouse.Error is not null || result.Api.Error is not null)
+        {
+            return 1;
+        }
+        return result.Lighthouse.Status == KsefStatus.Available ? 0 : 2;
+    }
+
+    private static async Task<LighthouseResult> CheckLighthouseAsync(ILighthouseClient lighthouse, CancellationToken cancellationToken)
+    {
         try
         {
-            ILighthouseClient lighthouse = scope.ServiceProvider.GetRequiredService<ILighthouseClient>();
             KsefStatusResponse status = await lighthouse.GetStatusAsync(cancellationToken);
-            Console.WriteLine($"  status: {status.Status}");
-            foreach (Message message in status.Messages ?? [])
+            return new LighthouseResult(status.Status, status.Messages ?? [], null);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return new LighthouseResult(null, [], ex.Message);
+        }
+    }
+
+    private static async Task<ApiResult> CheckApiAsync(KsefEnvironment env, ICryptographyClient crypto, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var certificates = await crypto.GetPublicCertificatesAsync(cancellationToken);
+            return new ApiResult(env.Name, env.ApiUrl, true,
+                [.. certificates.Select(c => new CertificateResult([.. c.Usage.Select(u => u.ToString())], c.ValidTo))], null);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return new ApiResult(env.Name, env.ApiUrl, false, [], ex.Message);
+        }
+    }
+
+    private static void Print(StatusResult result)
+    {
+        Console.WriteLine("Latarnia MF (dostępność KSeF):");
+        if (result.Lighthouse.Error is { } lighthouseError)
+        {
+            CliIo.Error($"Latarnia MF: {lighthouseError}");
+        }
+        else
+        {
+            Console.WriteLine($"  status: {result.Lighthouse.Status}");
+            foreach (Message message in result.Lighthouse.Messages)
             {
                 string end = message.End is { } e ? $" – {e:yyyy-MM-dd HH:mm}" : "";
                 Console.WriteLine($"  [{message.Type}] {message.Start:yyyy-MM-dd HH:mm}{end}: {message.Title}");
             }
-            if (status.Status != KsefStatus.Available)
-            {
-                exitCode = 2;
-            }
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            Console.WriteLine($"  błąd: {ex.Message}");
-            exitCode = 1;
         }
 
-        Console.WriteLine($"API KSeF ({env.Name}, {env.ApiUrl}):");
-        try
+        Console.WriteLine($"API KSeF ({result.Api.Environment}, {result.Api.Url}):");
+        if (result.Api.Error is { } apiError)
         {
-            ICryptographyClient crypto = scope.ServiceProvider.GetRequiredService<ICryptographyClient>();
-            var certificates = await crypto.GetPublicCertificatesAsync(cancellationToken);
-            Console.WriteLine($"  odpowiada; certyfikaty kluczy publicznych MF: {certificates.Count}");
-            foreach (var cert in certificates)
-            {
-                Console.WriteLine($"  - {string.Join(", ", cert.Usage)}: ważny do {cert.ValidTo:yyyy-MM-dd}");
-            }
+            CliIo.Error($"API KSeF ({result.Api.Environment}): {apiError}");
+            return;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        Console.WriteLine($"  odpowiada; certyfikaty kluczy publicznych MF: {result.Api.Certificates.Count}");
+        foreach (CertificateResult cert in result.Api.Certificates)
         {
-            Console.WriteLine($"  błąd: {ex.Message}");
-            exitCode = 1;
+            Console.WriteLine($"  - {string.Join(", ", cert.Usage)}: ważny do {cert.ValidTo:yyyy-MM-dd}");
         }
-
-        return exitCode;
     }
 }
