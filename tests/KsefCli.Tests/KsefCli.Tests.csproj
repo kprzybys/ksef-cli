@@ -22,7 +22,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\..\external\ksef-client-csharp\KSeF.Client.Tests.Core\Templates\invoice-template-fa-3.xml" Link="Templates\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\external\ksef-client-csharp\KSeF.Client.Tests.Core\Templates\invoice-template-fa-3.xml;..\..\external\ksef-client-csharp\KSeF.Client.Tests.Core\Templates\invoice-template-fa-3-with-custom-Subject2.xml" Link="Templates\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

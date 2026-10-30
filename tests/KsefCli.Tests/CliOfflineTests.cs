@@ -315,6 +315,40 @@ public class CliOfflineTests : IDisposable
     }
 
     [Fact]
+    public async Task Send_InvalidFile_SendsNothingAndNeedsNoSession()
+    {
+        // Brak sesji, a i tak błąd dotyczy pliku: kontrola lokalna jest przed kontaktem z KSeF.
+        string ok = WriteFile("ok.xml", TestData.ValidInvoice());
+        string bad = WriteFile("bom.xml", WithBom(TestData.ValidInvoice()));
+
+        CliResult result = await Ksef.RunAsync(dir.Path, "send", ok, bad);
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Empty(result.StdoutBytes);
+        Assert.StartsWith($"{bad}:1:1: KSeF błąd:", result.Stderr);
+        Assert.Contains("nic nie wysłano", result.Stderr);
+        Assert.DoesNotContain("ksef login", result.Stderr);
+    }
+
+    [Fact]
+    public async Task Send_MissingFile_SendsNothing()
+    {
+        CliResult result = await Ksef.RunAsync(dir.Path, "send", dir.File("brak.xml"));
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Contains("nic nie wysłano", result.Stderr);
+    }
+
+    [Fact]
+    public async Task Send_ValidFileWithoutSession_ExplainsHowToLogIn()
+    {
+        CliResult result = await Ksef.RunAsync(dir.Path, TestData.ValidInvoice(), "send");
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Contains("ksef login", result.Stderr);
+    }
+
+    [Fact]
     public async Task UnknownEnvironment_IsRejected()
     {
         CliResult result = await Ksef.RunAsync(dir.Path, "session", "-e", "prd");

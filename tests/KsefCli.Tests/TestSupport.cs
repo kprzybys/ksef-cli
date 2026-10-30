@@ -76,6 +76,21 @@ internal static class TestData
         return new UTF8Encoding(false).GetBytes(filled);
     }
 
+    /// <summary>
+    /// Faktura do wysłania na KSeF TEST: sprzedawca = NIP sesji, unikalny numer (KSeF odrzuca duplikaty),
+    /// opcjonalnie wskazany nabywca (wzór MF z `#nipOdbiorca#`).
+    /// </summary>
+    public static byte[] InvoiceToSend(string sellerNip, string? buyerNip = null)
+    {
+        string name = buyerNip is null ? "invoice-template-fa-3.xml" : "invoice-template-fa-3-with-custom-Subject2.xml";
+        string xml = System.IO.File.ReadAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "Templates", name))
+            .Replace("#nip#", sellerNip)
+            .Replace("#invoice_number#", Guid.NewGuid().ToString("N")[..12])
+            .Replace("#nipOdbiorca#", buyerNip ?? "");
+        Assert.DoesNotContain("#", xml.Replace("&#", ""));
+        return new UTF8Encoding(false).GetBytes(xml);
+    }
+
     public static readonly byte[] Bom = [0xEF, 0xBB, 0xBF];
 
     /// <summary>Losowy NIP z poprawną sumą kontrolną — na KSeF TEST każdy test dostaje własny kontekst.</summary>

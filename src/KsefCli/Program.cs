@@ -20,5 +20,6 @@ root.Subcommands.Add(LoginCommand.Create(envOption));
 root.Subcommands.Add(SessionCommands.CreateLogout(envOption));
 root.Subcommands.Add(SessionCommands.CreateList(envOption));
 root.Subcommands.Add(ListCommand.Create(envOption));
+root.Subcommands.Add(SendCommand.Create(envOption));
 
 return await root.Parse(args).InvokeAsync();

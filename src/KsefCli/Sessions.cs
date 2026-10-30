@@ -110,5 +110,21 @@ public static class SessionStore
     }
 }
 
+/// <summary>Access token sesji na żądanie: komendy z wieloma żądaniami pytają przed każdym, odświeżenie zapisuje się raz.</summary>
+public sealed class AccessTokenProvider(KsefSession session, IAuthorizationClient authorization)
+{
+    public KsefSession Session { get; private set; } = session;
+
+    public async Task<string> GetAsync(CancellationToken cancellationToken)
+    {
+        string token = await SessionStore.GetAccessTokenAsync(Session, authorization, cancellationToken);
+        if (token != Session.AccessToken.Token)
+        {
+            Session = SessionStore.Resolve(Session.Environment, Session.Nip);
+        }
+        return token;
+    }
+}
+
 /// <summary>Błąd sesji do pokazania użytkownikowi wprost (brak, wygasła, niejednoznaczna).</summary>
 public sealed class SessionException(string message) : Exception(message);

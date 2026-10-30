@@ -213,4 +213,116 @@ public class KsefTestEnvironmentTests : IDisposable
         Assert.True(result.ExitCode == 0, result.Stderr);
         Assert.NotEqual(session.AccessToken.Token, SessionStore.Resolve("test", nip).AccessToken.Token);
     }
+
+    private string WriteInvoice(string name, byte[] xml)
+    {
+        string path = Path.Combine(runtime.Path, name);
+        File.WriteAllBytes(path, xml);
+        return path;
+    }
+
+    private static string[][] Rows(CliResult result) =>
+        [.. result.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(line => line.Split('\t'))];
+
+    [Fact]
+    public async Task Send_TwoInvoices_ReturnsKsefNumbersInInputOrder_AndListShowsThem()
+    {
+        string nip = TestData.RandomNip();
+        await LoginAsync(nip);
+        string first = WriteInvoice("a.xml", TestData.InvoiceToSend(nip));
+        string second = WriteInvoice("b.xml", TestData.InvoiceToSend(nip));
+
+        CliResult sent = await Ksef("send", first, second);
+
+        Assert.True(sent.ExitCode == 0, sent.Stderr);
+        Assert.Empty(sent.Stderr);
+        string[][] rows = Rows(sent);
+        Assert.Equal([first, second], rows.Select(r => r[1]));
+        Assert.All(rows, r =>
+        {
+            Assert.StartsWith($"{nip}-", r[0]); // numer KSeF zaczyna się od NIP-u sprzedawcy
+            Assert.Equal(rows[0][2], r[2]); // jedna sesja interaktywna
+        });
+
+        // Faktury są już widoczne w KSeF (data przyjęcia = dziś; data wystawienia we wzorze jest stara).
+        CliResult listed = await Ksef("list", "--subject", "seller", "--date-type", "invoicing");
+        Assert.True(listed.ExitCode == 0, listed.Stderr);
+        Assert.Equal(rows.Select(r => r[0]).Order(), Rows(listed).Select(r => r[0]).Order());
+        Assert.All(Rows(listed), r => Assert.Equal(nip, r[3]));
+    }
+
+    [Fact]
+    public async Task Send_Duplicate_IsRejectedWithOriginalKsefNumber()
+    {
+        string nip = TestData.RandomNip();
+        await LoginAsync(nip);
+        string invoice = WriteInvoice("a.xml", TestData.InvoiceToSend(nip));
+        string original = Rows(await Ksef("send", invoice))[0][0];
+        string fresh = WriteInvoice("b.xml", TestData.InvoiceToSend(nip));
+
+        // Duplikat obok nowej faktury: nowa przechodzi, duplikat odrzucony, kod wyjścia 1.
+        CliResult result = await Ksef("send", invoice, fresh);
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Equal([fresh], Rows(result).Select(r => r[1]));
+        Assert.Contains($"{invoice}: KSeF 440", result.Stderr);
+        Assert.Contains($"originalKsefNumber={original}", result.Stderr);
+    }
+
+    [Fact]
+    public async Task Send_Json_DescribesAcceptedAndRejected()
+    {
+        string nip = TestData.RandomNip();
+        await LoginAsync(nip);
+        string invoice = WriteInvoice("a.xml", TestData.InvoiceToSend(nip));
+
+        CliResult first = await Ksef("send", "--json", invoice);
+        CliResult again = await Ksef("send", "--json", invoice);
+
+        Assert.Equal(0, first.ExitCode);
+        using JsonDocument accepted = JsonDocument.Parse(first.Stdout);
+        JsonElement ok = Assert.Single(accepted.RootElement.EnumerateArray());
+        Assert.True(ok.GetProperty("accepted").GetBoolean());
+        Assert.Equal(200, ok.GetProperty("code").GetInt32());
+        Assert.StartsWith($"{nip}-", ok.GetProperty("ksefNumber").GetString());
+        Assert.False(ok.TryGetProperty("index", out _));
+
+        Assert.Equal(1, again.ExitCode);
+        using JsonDocument rejected = JsonDocument.Parse(again.Stdout);
+        JsonElement duplicate = Assert.Single(rejected.RootElement.EnumerateArray());
+        Assert.False(duplicate.GetProperty("accepted").GetBoolean());
+        Assert.Equal(440, duplicate.GetProperty("code").GetInt32());
+        Assert.Equal(ok.GetProperty("ksefNumber").GetString(), duplicate.GetProperty("extensions").GetProperty("originalKsefNumber").GetString());
+    }
+
+    [Fact]
+    public async Task Send_FromStdin()
+    {
+        string nip = TestData.RandomNip();
+        await LoginAsync(nip);
+
+        CliResult result = await Tests.Ksef.RunAsync(runtime.Path, TestData.InvoiceToSend(nip), "send");
+
+        Assert.True(result.ExitCode == 0, result.Stderr);
+        Assert.Equal("<stdin>", Assert.Single(Rows(result))[1]);
+    }
+
+    [Fact]
+    public async Task Send_SellerInvoice_AppearsOnBuyerSideByDefault()
+    {
+        // Sprzedawca wystawia fakturę na nabywcę; nabywca widzi ją w domyślnym `ksef list` (faktury otrzymane).
+        string seller = TestData.RandomNip();
+        string buyer = TestData.RandomNip();
+        await LoginAsync(seller);
+        string ksefNumber = Rows(await Ksef("send", "--nip", seller, WriteInvoice("a.xml", TestData.InvoiceToSend(seller, buyer))))[0][0];
+        await LoginAsync(buyer);
+
+        CliResult listed = await Ksef("list", "--nip", buyer, "--date-type", "invoicing");
+
+        Assert.True(listed.ExitCode == 0, listed.Stderr);
+        string[] row = Assert.Single(Rows(listed));
+        Assert.Equal(ksefNumber, row[0]);
+        Assert.Equal(seller, row[3]);
+        Assert.Equal(buyer, row[5]);
+    }
 }

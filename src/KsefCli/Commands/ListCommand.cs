@@ -121,13 +121,11 @@ public static class ListCommand
             IAuthorizationClient authorization = scope.ServiceProvider.GetRequiredService<IAuthorizationClient>();
             IKSeFClient ksef = scope.ServiceProvider.GetRequiredService<IKSeFClient>();
 
+            // Token pobierany przy każdej stronie: długie zapytanie może przekroczyć ważność access tokenu.
+            AccessTokenProvider tokens = new(session, authorization);
             InvoiceQueryResult result = await InvoiceQuery.QueryAllAsync(filters, async (f, offset, size, ct) =>
-            {
-                // Token pobierany przy każdej stronie: długie zapytanie może przekroczyć ważność access tokenu.
-                string accessToken = await SessionStore.GetAccessTokenAsync(session, authorization, ct);
-                session = SessionStore.Resolve(env.Name, session.Nip);
-                return await ksef.QueryInvoiceMetadataAsync(f, accessToken, offset, size, SortOrder.Asc, ct);
-            }, cancellationToken);
+                await ksef.QueryInvoiceMetadataAsync(f, await tokens.GetAsync(ct), offset, size, SortOrder.Asc, ct),
+                cancellationToken);
 
             if (json)
             {

@@ -32,6 +32,7 @@ nie trzeba pobierać.
 | `ksef logout [--nip <NIP>]` | tak | Unieważnia sesję w KSeF i usuwa ją lokalnie. |
 | `ksef session [-a] [--json]` | nie | Lokalne sesje: środowisko, NIP, ważność (bez tokenów). Kod wyjścia 1, gdy brak sesji. |
 | `ksef list [--subject buyer\|seller\|third\|authorized] [--from D] [--to D] [--date-type issue\|invoicing\|storage] [--json]` | tak | Metadane faktur z KSeF. Domyślnie faktury otrzymane (`buyer`) od 1. dnia bieżącego miesiąca. TSV bez nagłówka: numer KSeF, numer faktury, data wystawienia, NIP i nazwa sprzedawcy, identyfikator i nazwa nabywcy, brutto, waluta. Daty `RRRR-MM-DD` (czas lokalny, „do” włącznie) albo ISO 8601. Zakres dłuższy niż limit KSeF (100 dni) dzielony automatycznie; wynik obcięty przez KSeF do 10 000 pozycji pobierany dalej od ostatniej daty, bez powtórek. Pusty wynik to kod 0. |
+| `ksef send [pliki\|-]... [--json]` | tak | Wysyła faktury FA(3) w jednej sesji interaktywnej i czeka na numery KSeF. Najpierw ta sama kontrola co `validate` — jeśli któryś plik jej nie przejdzie, nie wysyła nic. Wynik TSV: numer KSeF, plik, numer sesji (do UPO); odrzucone (np. 440 duplikat z `originalKsefNumber`) na stderr. Kod wyjścia: 0 wszystkie przyjęte, 1 jest błąd. |
 
 ## Zasady
 
@@ -50,6 +51,7 @@ ksef show faktura.xml > faktura.html && xdg-open faktura.html
 ksef status --json | jq -r .lighthouse.status
 ksef list --from 2026-01-01 | cut -f1                  # numery KSeF faktur otrzymanych
 ksef list --subject seller --json | jq 'map(.grossAmount) | add'
+ksef send faktury/*.xml > wyslane.tsv                   # numer KSeF, plik, sesja
 ```
 
 Domyślne środowisko: `test`.
@@ -85,8 +87,8 @@ z systemu. Komendy wymagające logowania same odświeżają access token. Przy k
 - Nowa wersja schematu: `scripts/fetch-fa3-schemas.py <URL> && scripts/generate-fa3.sh`, potem testy.
 
 XSD sprawdza strukturę, nie logikę (sumy VAT, adnotacje) — tę trzeba sprawdzać osobno.
-Nie sprawdzamy jeszcze duplikatów (NIP sprzedawcy + `RodzajFaktury` + `P_2`, błąd KSeF 440) — wymaga
-lokalnego rejestru wysłanych faktur.
+Duplikatów (NIP sprzedawcy + `RodzajFaktury` + `P_2`) nie sprawdzamy lokalnie — `ksef send` zgłasza
+odrzucenie przez KSeF (błąd 440) z numerem KSeF i sesją oryginału, bez własnego rejestru wysłanych faktur.
 
 Do KSeF wysyłamy dokładnie zwalidowane bajty: KSeF porównuje skrót SHA-256 i rozmiar pliku, więc
 po walidacji pliku nie wolno przeformatowywać.
@@ -104,7 +106,9 @@ KSEF_E2E=1 dotnet test --project tests/KsefCli.Tests   # + testy na żywym KSeF 
   odmowa wypisania klucza na terminal przez `script`) oraz sprawdzają NIP i magazyn sesji, w tym odświeżanie tokenu.
 - Testy E2E (`KSEF_E2E=1`) logują się na KSeF TEST certyfikatami podpisanymi samym sobą, każdy na losowy NIP:
   pełny cykl login/session/logout, certyfikat ze stdin, pieczęć, odrzucenie certyfikatu na inny NIP,
-  odświeżenie wygasłego access tokenu i to, że po `logout` refresh token przestaje działać.
+  odświeżenie wygasłego access tokenu i to, że po `logout` refresh token przestaje działać;
+  wysyłka faktur (kolejność, stdin, JSON, duplikat 440 obok nowej faktury), widoczność wysłanych faktur
+  w `ksef list` po stronie sprzedawcy i — po zalogowaniu na NIP nabywcy — po stronie nabywcy.
 
 ## Aktualizacja biblioteki MF
 
