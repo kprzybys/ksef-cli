@@ -157,6 +157,10 @@ internal sealed class FakeKsef : IDisposable
     public Task<CliResult> RunAsync(string runtimeDir, byte[]? stdin, params string[] args) =>
         Ksef.RunAsync(runtimeDir, stdin, new Dictionary<string, string> { ["KSEF_API_URL"] = Url }, args);
 
+    /// <summary>Jak wyżej, z dodatkowymi zmiennymi środowiska procesu (np. konfiguracją tokenu PKCS#11).</summary>
+    public Task<CliResult> RunAsync(string runtimeDir, byte[]? stdin, IReadOnlyDictionary<string, string> environment, params string[] args) =>
+        Ksef.RunAsync(runtimeDir, stdin, new Dictionary<string, string>(environment, StringComparer.Ordinal) { ["KSEF_API_URL"] = Url }, args);
+
     public Task<CliResult> RunAsync(string runtimeDir, params string[] args) => RunAsync(runtimeDir, null, args);
 
     public void Dispose()

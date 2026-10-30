@@ -16,7 +16,8 @@ public class LoginExternalTests
     private const string Reference = "20261030-AU-1234567890-ABCDEF0123-47";
     private const string Challenge = "20261030-CR-0123456789-ABCDEF0123-04";
 
-    private static FakeKsef AuthenticatingKsef()
+    /// <summary>KSeF przyjmujący logowanie podpisem XAdES (dowolnym — weryfikację podpisu robią testy).</summary>
+    internal static FakeKsef AuthenticatingKsef()
     {
         FakeKsef ksef = new();
         DateTimeOffset until = DateTimeOffset.UtcNow.AddMinutes(15);

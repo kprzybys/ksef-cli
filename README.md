@@ -146,6 +146,23 @@ ksef login --nip 5908996669 --signed logowanie-podpisany.xml
 Wyzwanie jest ważne kilka minut, więc podpisać trzeba od razu. Przed wysyłką `ksef` sprawdza tylko, czy plik
 to podpisane żądanie logowania dla tego NIP-u; sam podpis weryfikuje KSeF.
 
+Czwarta — klucz, który nie opuszcza karty, tokenu ani TPM: `--cert` z samym certyfikatem i `--key` z URI PKCS#11
+(RFC 7512). Podpis robi OpenSSL systemu przez moduł PKCS#11, a p11-kit udostępnia wszystkie zarejestrowane karty
+(OpenSC, TPM, SoftHSM).
+
+```bash
+p11tool --list-all-privkeys                    # znajdź URI klucza (gnutls-bin), np. pkcs11:token=…;object=…
+ksef login --nip 5908996669 --cert cert.pem --key 'pkcs11:token=Karta;object=Podpis;type=private' --pin-file -
+```
+
+- PIN tylko z pliku albo stdin (`--pin-file`), nigdy jako argument. Komunikaty modułów PKCS#11 przechwytujemy,
+  więc udane logowanie jest ciche, a przy błędzie PIN jest zamaskowany.
+- `--key-via engine` (libp11, pakiet `libengine-pkcs11-openssl`) albo `provider` (`pkcs11-provider`).
+  Domyślnie engine na OpenSSL < 3.2, provider na nowszym. pkcs11-provider 0.3 na OpenSSL 3.0 (Ubuntu 24.04)
+  zawiesza się z SoftHSM, dlatego tam engine.
+- Testy (`LoginPkcs11Tests`, E2E `Login_KeyOnPkcs11Token`) zakładają tymczasowy token SoftHSM (`softhsm2`);
+  bez niego się pomijają.
+
 Sesje (access token ważny ok. 15 min, refresh token 7 dni) to stan narzędzia, nie trwały sekret:
 `$XDG_RUNTIME_DIR/ksef/<środowisko>-<NIP>.json` z prawami 0600 — katalog w RAM, znika po wylogowaniu
 z systemu. Komendy wymagające logowania same odświeżają access token. Przy kilku sesjach w jednym

@@ -31,8 +31,21 @@ public static partial class LoginCommand
         nipOption.Required = true;
         Option<string> certOption = new("--cert")
         {
-            Description = "Plik PEM z certyfikatem i kluczem prywatnym; `-` = stdin",
+            Description = "Plik PEM z certyfikatem i kluczem prywatnym (z --key: sam certyfikat); `-` = stdin",
         };
+        Option<string> keyOption = new("--key")
+        {
+            Description = "Klucz prywatny na karcie, tokenie albo w TPM: URI PKCS#11 (RFC 7512), np. `pkcs11:token=…;object=…;type=private`",
+        };
+        Option<string> pinFileOption = new("--pin-file")
+        {
+            Description = "Plik z PIN-em do --key (pierwszy niepusty wiersz); `-` = stdin",
+        };
+        Option<string> keyViaOption = new("--key-via")
+        {
+            Description = "Dostęp OpenSSL do --key: engine (libp11) albo provider (pkcs11-provider); domyślnie engine na OpenSSL < 3.2, provider na nowszym",
+        };
+        keyViaOption.AcceptOnlyFromAmong("engine", "provider");
         Option<string> tokenOption = new("--token-file")
         {
             Description = "Plik z tokenem KSeF (pierwszy niepusty wiersz); `-` = stdin, np. `pass show ksef/token | ksef login --token-file -`",
@@ -53,10 +66,26 @@ public static partial class LoginCommand
         command.Options.Add(tokenOption);
         command.Options.Add(requestOption);
         command.Options.Add(signedOption);
+        command.Options.Add(keyOption);
+        command.Options.Add(pinFileOption);
+        command.Options.Add(keyViaOption);
         command.Validators.Add(result =>
         {
             int methods = new[] { result.GetValue(certOption), result.GetValue(tokenOption), result.GetValue(signedOption) }.Count(v => v is not null)
                 + (result.GetValue(requestOption) ? 1 : 0);
+            if (methods == 1 && result.GetValue(keyOption) is null && (result.GetValue(pinFileOption) ?? result.GetValue(keyViaOption)) is not null)
+            {
+                result.AddError("--pin-file i --key-via dotyczą tylko klucza na karcie (--key).");
+            }
+            if (result.GetValue(keyOption) is not null && result.GetValue(certOption) is null)
+            {
+                result.AddError("--key wymaga --cert z certyfikatem (sam certyfikat, bez klucza).");
+            }
+            if (string.Equals(result.GetValue(certOption), CliIo.StdStream, StringComparison.Ordinal)
+                && string.Equals(result.GetValue(pinFileOption), CliIo.StdStream, StringComparison.Ordinal))
+            {
+                result.AddError("Na stdin może iść tylko jedno: certyfikat albo PIN.");
+            }
             if (methods != 1)
             {
                 result.AddError("Podaj dokładnie jedną metodę: --cert (certyfikat), --token-file (token KSeF), --request albo --signed (podpis innym programem).");
@@ -76,7 +105,10 @@ public static partial class LoginCommand
             }
             return parseResult.GetValue(tokenOption) is { } tokenPath
                 ? await RunWithTokenAsync(env, nip, tokenPath, cancellationToken)
-                : await RunAsync(env, nip, parseResult.GetRequiredValue(certOption), cancellationToken);
+                : await RunAsync(
+                    env, nip, parseResult.GetRequiredValue(certOption),
+                    parseResult.GetValue(keyOption) is { } key ? new HardwareKey(key, parseResult.GetValue(pinFileOption), parseResult.GetValue(keyViaOption)) : null,
+                    cancellationToken);
         });
         return command;
     }
@@ -158,7 +190,7 @@ public static partial class LoginCommand
         }
     }
 
-    private static async Task<int> RunAsync(KsefEnvironment env, string nip, string certPath, CancellationToken cancellationToken)
+    private static async Task<int> RunAsync(KsefEnvironment env, string nip, string certPath, HardwareKey? key, CancellationToken cancellationToken)
     {
         if (!CanSaveSession())
         {
@@ -169,12 +201,21 @@ public static partial class LoginCommand
         try
         {
             string pem = Encoding.ASCII.GetString(CliIo.ReadAllBytes(certPath));
-            certificate = X509Certificate2.CreateFromPem(pem, pem);
+            certificate = key is null ? X509Certificate2.CreateFromPem(pem, pem) : X509Certificate2.CreateFromPem(pem);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CryptographicException or ArgumentException)
         {
-            CliIo.Error($"{CliIo.DisplayName(certPath)}: nie udało się wczytać certyfikatu z kluczem (PEM): {ex.Message}");
+            CliIo.Error($"{CliIo.DisplayName(certPath)}: nie udało się wczytać certyfikatu{(key is null ? " z kluczem" : "")} (PEM): {ex.Message}");
             return 1;
+        }
+        if (key is not null)
+        {
+            using X509Certificate2 publicOnly = certificate;
+            if (!TryAttachHardwareKey(publicOnly, key, out X509Certificate2? attached))
+            {
+                return 1;
+            }
+            certificate = attached;
         }
 
         using (certificate)

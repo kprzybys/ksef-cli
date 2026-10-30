@@ -507,4 +507,19 @@ public class KsefTestEnvironmentTests : IDisposable
         Assert.Equal(0, (await Ksef("session")).ExitCode);
         Assert.Equal(0, (await Ksef("logout", "--nip", nip)).ExitCode);
     }
+
+    [Fact]
+    public async Task Login_KeyOnPkcs11Token()
+    {
+        Assert.SkipWhen(SoftHsmToken.Unavailable is not null, $"PKCS#11: {SoftHsmToken.Unavailable}");
+        string nip = TestData.RandomNip();
+        using SoftHsmToken token = await SoftHsmToken.CreateAsync(nip);
+
+        CliResult login = await Tests.Ksef.RunAsync(runtime.Path, null, token.Environment,
+            "login", "--nip", nip, "--cert", token.CertificateFile, "--key", token.Uri, "--pin-file", token.PinFile, "--key-via", "engine");
+
+        Assert.True(login.ExitCode == 0, login.Stderr);
+        Assert.Equal("", login.Stderr);
+        Assert.Equal(0, (await Ksef("logout", "--nip", nip)).ExitCode);
+    }
 }
