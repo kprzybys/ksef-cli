@@ -77,6 +77,10 @@ public static partial class LoginCommand
             {
                 result.AddError("--pin-file i --key-via dotyczą tylko klucza na karcie (--key).");
             }
+            if (result.GetValue(keyOption) is { } keyUri && HasPinInUri(keyUri))
+            {
+                result.AddError("PIN podaj przez --pin-file, nie w --key (pin-value/pin-source trafiłyby do komunikatów i historii powłoki).");
+            }
             if (result.GetValue(keyOption) is not null && result.GetValue(certOption) is null)
             {
                 result.AddError("--key wymaga --cert z certyfikatem (sam certyfikat, bez klucza).");
@@ -208,15 +212,19 @@ public static partial class LoginCommand
             CliIo.Error($"{CliIo.DisplayName(certPath)}: nie udało się wczytać certyfikatu{(key is null ? " z kluczem" : "")} (PEM): {ex.Message}");
             return 1;
         }
+        AttachedKey? hardware = null;
         if (key is not null)
         {
             using X509Certificate2 publicOnly = certificate;
-            if (!TryAttachHardwareKey(publicOnly, key, out X509Certificate2? attached))
+            if (!TryAttachHardwareKey(publicOnly, key, out hardware))
             {
                 return 1;
             }
-            certificate = attached;
+            certificate = hardware.Certificate;
         }
+        Func<string, string> sign = hardware is null
+            ? xml => SignatureService.Sign(xml, certificate)
+            : xml => SignWithHardwareKey(xml, hardware);
 
         using (certificate)
         {
@@ -226,7 +234,7 @@ public static partial class LoginCommand
 
             try
             {
-                KsefSession session = await AuthenticateAsync(authorization, env, nip, certificate, cancellationToken);
+                KsefSession session = await AuthenticateAsync(authorization, env, nip, sign, cancellationToken);
                 SessionStore.Save(session);
                 return 0;
             }
@@ -236,13 +244,18 @@ public static partial class LoginCommand
                 CliIo.Error($"logowanie NIP {nip} ({env.Name}) nieudane: {ex.Message}");
                 return 1;
             }
+            catch (HardwareKeyException ex)
+            {
+                CliIo.Error($"logowanie NIP {nip} ({env.Name}) nieudane — podpis kluczem {key?.Uri}: {ex.Message}");
+                return 1;
+            }
         }
     }
 
     private static async Task<KsefSession> AuthenticateAsync(
-        IAuthorizationClient authorization, KsefEnvironment env, string nip, X509Certificate2 certificate, CancellationToken cancellationToken)
+        IAuthorizationClient authorization, KsefEnvironment env, string nip, Func<string, string> sign, CancellationToken cancellationToken)
     {
-        string signedXml = SignatureService.Sign(await NewRequestXmlAsync(authorization, nip, cancellationToken), certificate);
+        string signedXml = sign(await NewRequestXmlAsync(authorization, nip, cancellationToken));
 
         SignatureResponse submission = await authorization.SubmitXadesAuthRequestAsync(signedXml, cancellationToken: cancellationToken);
         return await CompleteAsync(authorization, env, nip, submission, cancellationToken);

@@ -155,8 +155,10 @@ p11tool --list-all-privkeys                    # znajdź URI klucza (gnutls-bin)
 ksef login --nip 5908996669 --cert cert.pem --key 'pkcs11:token=Karta;object=Podpis;type=private' --pin-file -
 ```
 
-- PIN tylko z pliku albo stdin (`--pin-file`), nigdy jako argument. Komunikaty modułów PKCS#11 przechwytujemy,
-  więc udane logowanie jest ciche, a przy błędzie PIN jest zamaskowany.
+- PIN tylko z pliku albo stdin (`--pin-file`, pierwszy niepusty wiersz, spacje się liczą), nigdy jako argument
+  ani w `--key` (`pin-value=` jest odrzucane). Komunikaty modułów PKCS#11 przechwytujemy przy każdej operacji
+  na kluczu, więc udane logowanie jest ciche, a przy błędzie PIN jest zamaskowany. Zły PIN wychodzi przed
+  połączeniem z KSeF (próbny podpis).
 - `--key-via engine` (libp11, pakiet `libengine-pkcs11-openssl`) albo `provider` (`pkcs11-provider`).
   Domyślnie engine na OpenSSL < 3.2, provider na nowszym. pkcs11-provider 0.3 na OpenSSL 3.0 (Ubuntu 24.04)
   zawiesza się z SoftHSM, dlatego tam engine.

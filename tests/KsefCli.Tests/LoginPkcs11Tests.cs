@@ -17,17 +17,20 @@ internal sealed class SoftHsmToken : IDisposable
 
     private readonly TempDir dir = new();
 
-    private SoftHsmToken(string nip)
+    private SoftHsmToken(string nip, string pin)
     {
         Nip = nip;
+        TokenPin = pin;
         Label = "ksef-" + Guid.NewGuid().ToString("N")[..8];
         Directory.CreateDirectory(dir.File("tokens"));
         File.WriteAllText(dir.File("softhsm2.conf"), $"directories.tokendir = {dir.File("tokens")}\nobjectstore.backend = file\n");
         Environment = new Dictionary<string, string>(StringComparer.Ordinal) { ["SOFTHSM2_CONF"] = dir.File("softhsm2.conf") };
         CertificateFile = dir.File("cert.pem");
         PinFile = dir.File("pin");
-        File.WriteAllText(PinFile, Pin + "\n");
+        File.WriteAllText(PinFile, pin + "\n");
     }
+
+    public string TokenPin { get; }
 
     public string Nip { get; }
 
@@ -45,9 +48,17 @@ internal sealed class SoftHsmToken : IDisposable
     /// <summary>Powód pominięcia testów albo null, gdy softhsm2 i engine pkcs11 są dostępne.</summary>
     public static string? Unavailable { get; } = FindUnavailable();
 
-    public static async Task<SoftHsmToken> CreateAsync(string nip)
+    /// <summary>
+    /// Powód pominięcia testów providera albo null. pkcs11-provider na OpenSSL &lt; 3.2 zakleszcza się z SoftHSM,
+    /// więc tam (np. Ubuntu 24.04) tych testów nie da się uruchomić.
+    /// </summary>
+    public static string? ProviderUnavailable { get; } = Unavailable
+        ?? (SafeEvpPKeyHandle.OpenSslVersion < 0x3020_0000 ? "pkcs11-provider z SoftHSM wymaga OpenSSL >= 3.2"
+            : Run("openssl", ["list", "-providers", "-provider", "pkcs11"], null).Exit == 0 ? null : "brak pkcs11-provider");
+
+    public static async Task<SoftHsmToken> CreateAsync(string nip, string pin = Pin)
     {
-        SoftHsmToken token = new(nip);
+        SoftHsmToken token = new(nip, pin);
         string full = token.dir.File("cert-with-key.pem");
         CliResult cert = await Ksef.RunAsync(token.dir.Path, "cert", "new", "--nip", nip, "-o", full);
         Assert.True(cert.ExitCode == 0, cert.Stderr);
@@ -58,8 +69,8 @@ internal sealed class SoftHsmToken : IDisposable
         string keyFile = token.dir.File("key.pem");
         await File.WriteAllTextAsync(keyFile, key.ExportPkcs8PrivateKeyPem(), TestContext.Current.CancellationToken);
 
-        token.SoftHsm("--init-token", "--free", "--label", token.Label, "--pin", Pin, "--so-pin", "5678");
-        token.SoftHsm("--import", keyFile, "--token", token.Label, "--label", "ksef-test", "--id", "01", "--pin", Pin);
+        token.SoftHsm("--init-token", "--free", "--label", token.Label, "--pin", pin, "--so-pin", "5678");
+        token.SoftHsm("--import", keyFile, "--token", token.Label, "--label", "ksef-test", "--id", "01", "--pin", pin);
         File.Delete(keyFile);
         return token;
     }
@@ -163,6 +174,40 @@ public class LoginPkcs11Tests
     }
 
     [Fact]
+    public async Task Login_PinWithSpaces_IsKeptAsIs()
+    {
+        using SoftHsmToken token = await SoftHsmToken.CreateAsync(Nip, " 73 59 ");
+        using FakeKsef ksef = LoginExternalTests.AuthenticatingKsef();
+        using TempDir dir = new();
+
+        CliResult login = await ksef.RunAsync(dir.Path, null, token.Environment,
+            "login", "--nip", Nip, "--cert", token.CertificateFile, "--key", token.Uri, "--pin-file", token.PinFile, "--key-via", "engine");
+
+        Assert.True(login.ExitCode == 0, login.Stderr);
+    }
+
+    [Fact]
+    public async Task Login_Provider_WrongPin_FailsBeforeNetworkWithoutRevealingPin()
+    {
+        // pkcs11-provider loguje się do tokenu dopiero przy podpisie — próbny podpis musi to wyłapać przed KSeF.
+        Assert.SkipWhen(SoftHsmToken.ProviderUnavailable is not null, $"PKCS#11 provider: {SoftHsmToken.ProviderUnavailable}");
+        using SoftHsmToken token = await SoftHsmToken.CreateAsync(Nip);
+        using FakeKsef ksef = LoginExternalTests.AuthenticatingKsef();
+        using TempDir dir = new();
+        string pinFile = dir.File("pin");
+        await File.WriteAllTextAsync(pinFile, "480613", TestContext.Current.CancellationToken);
+
+        CliResult login = await ksef.RunAsync(dir.Path, null, token.Environment,
+            "login", "--nip", Nip, "--cert", token.CertificateFile, "--key", token.Uri, "--pin-file", pinFile, "--key-via", "provider");
+
+        Assert.Equal(1, login.ExitCode);
+        Assert.StartsWith($"ksef: {token.Uri}: nie udało się użyć klucza przez OpenSSL provider", login.Stderr, StringComparison.Ordinal);
+        Assert.DoesNotContain("480613", login.Stderr, StringComparison.Ordinal);
+        Assert.DoesNotContain("   at ", login.Stderr, StringComparison.Ordinal);
+        Assert.Empty(ksef.RequestsTo("POST", "auth/challenge"));
+    }
+
+    [Fact]
     public async Task Login_KeyDoesNotMatchCertificate_IsRejected()
     {
         using SoftHsmToken token = await SoftHsmToken.CreateAsync(Nip);
@@ -188,6 +233,8 @@ public class LoginKeyOptionTests
     [InlineData("--pin-file i --key-via dotyczą tylko klucza na karcie", "--cert", "c.pem", "--pin-file", "p")]
     [InlineData("--pin-file i --key-via dotyczą tylko klucza na karcie", "--cert", "c.pem", "--key-via", "engine")]
     [InlineData("Na stdin może iść tylko jedno", "--cert", "-", "--key", SoftHsmToken.KeyUri, "--pin-file", "-")]
+    [InlineData("PIN podaj przez --pin-file", "--cert", "c.pem", "--key", SoftHsmToken.KeyUri + "?pin-value=1234")]
+    [InlineData("PIN podaj przez --pin-file", "--cert", "c.pem", "--key", SoftHsmToken.KeyUri + "?PIN-SOURCE=file:/tmp/p")]
     public async Task Login_KeyOptions_AreValidated(string expected, params string[] options)
     {
         using TempDir dir = new();
