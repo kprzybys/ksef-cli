@@ -31,6 +31,7 @@ nie trzeba pobierać.
 | `ksef login --nip <NIP> --cert <plik.pem\|->` | — | Logowanie certyfikatem (podpis XAdES wyzwania KSeF) w kontekście NIP-u. Przy sukcesie milczy. |
 | `ksef logout [--nip <NIP>]` | tak | Unieważnia sesję w KSeF i usuwa ją lokalnie. |
 | `ksef session [-a] [--json]` | nie | Lokalne sesje: środowisko, NIP, ważność (bez tokenów). Kod wyjścia 1, gdy brak sesji. |
+| `ksef list [--subject buyer\|seller\|third\|authorized] [--from D] [--to D] [--date-type issue\|invoicing\|storage] [--json]` | tak | Metadane faktur z KSeF. Domyślnie faktury otrzymane (`buyer`) od 1. dnia bieżącego miesiąca. TSV bez nagłówka: numer KSeF, numer faktury, data wystawienia, NIP i nazwa sprzedawcy, identyfikator i nazwa nabywcy, brutto, waluta. Daty `RRRR-MM-DD` (czas lokalny, „do” włącznie) albo ISO 8601. Zakres dłuższy niż limit KSeF (100 dni) dzielony automatycznie; wynik obcięty przez KSeF do 10 000 pozycji pobierany dalej od ostatniej daty, bez powtórek. Pusty wynik to kod 0. |
 
 ## Zasady
 
@@ -47,6 +48,8 @@ Nie wystawia faktur, nie księguje i nie trzyma własnej bazy — to zadania inn
 ksef validate faktury/*.xml && echo wszystkie poprawne
 ksef show faktura.xml > faktura.html && xdg-open faktura.html
 ksef status --json | jq -r .lighthouse.status
+ksef list --from 2026-01-01 | cut -f1                  # numery KSeF faktur otrzymanych
+ksef list --subject seller --json | jq 'map(.grossAmount) | add'
 ```
 
 Domyślne środowisko: `test`.

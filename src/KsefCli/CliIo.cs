@@ -1,7 +1,11 @@
 using System.CommandLine;
+using System.Runtime.Versioning;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+
+// Narzędzie dla Linuksa: prawa plików (0600/0700), $XDG_RUNTIME_DIR.
+[assembly: SupportedOSPlatform("linux")]
 
 namespace KsefCli;
 

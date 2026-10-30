@@ -274,6 +274,47 @@ public class CliOfflineTests : IDisposable
     }
 
     [Fact]
+    public async Task List_NoSession_ExplainsHowToLogIn()
+    {
+        CliResult result = await Ksef.RunAsync(dir.Path, "list");
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Empty(result.StdoutBytes);
+        Assert.Contains("ksef login", result.Stderr);
+    }
+
+    [Theory]
+    [InlineData("--from", "wczoraj")]
+    [InlineData("--to", "2026-02-30")]
+    public async Task List_InvalidDate_IsRejected(string option, string value)
+    {
+        CliResult result = await Ksef.RunAsync(dir.Path, "list", option, value);
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Contains($"Niepoprawna data: {value}", result.Stderr);
+    }
+
+    [Fact]
+    public async Task List_FromAfterTo_IsRejectedBeforeContactingKsef()
+    {
+        CliResult result = await Ksef.RunAsync(dir.Path, "list", "--from", "2026-11-01", "--to", "2026-10-01");
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Contains("późniejsza", result.Stderr);
+    }
+
+    [Theory]
+    [InlineData("--subject", "nabywca")]
+    [InlineData("--date-type", "wystawienia")]
+    public async Task List_UnknownChoice_IsRejected(string option, string value)
+    {
+        CliResult result = await Ksef.RunAsync(dir.Path, "list", option, value);
+
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains(value, result.Stderr);
+    }
+
+    [Fact]
     public async Task UnknownEnvironment_IsRejected()
     {
         CliResult result = await Ksef.RunAsync(dir.Path, "session", "-e", "prd");

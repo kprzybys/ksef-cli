@@ -19,5 +19,6 @@ root.Subcommands.Add(CertCommand.Create());
 root.Subcommands.Add(LoginCommand.Create(envOption));
 root.Subcommands.Add(SessionCommands.CreateLogout(envOption));
 root.Subcommands.Add(SessionCommands.CreateList(envOption));
+root.Subcommands.Add(ListCommand.Create(envOption));
 
 return await root.Parse(args).InvokeAsync();

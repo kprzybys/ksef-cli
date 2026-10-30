@@ -167,4 +167,50 @@ public class KsefTestEnvironmentTests : IDisposable
         Assert.Equal(0, (await Ksef("logout")).ExitCode);
         Assert.Empty(SessionStore.List());
     }
+
+    [Fact]
+    public async Task List_NewNip_HasNoInvoicesInAnyRole()
+    {
+        await LoginAsync(TestData.RandomNip());
+
+        foreach (string subject in new[] { "buyer", "seller", "third", "authorized" })
+        {
+            CliResult text = await Ksef("list", "--subject", subject);
+            Assert.True(text.ExitCode == 0, $"{subject}: {text.Stderr}");
+            Assert.Empty(text.StdoutBytes);
+        }
+
+        CliResult json = await Ksef("list", "--json");
+        Assert.Equal(0, json.ExitCode);
+        Assert.Equal("[]", json.Stdout.Trim());
+    }
+
+    [Theory]
+    [InlineData("issue")]
+    [InlineData("invoicing")]
+    [InlineData("storage")]
+    public async Task List_RangeLongerThanKsefLimit_IsSplitAutomatically(string dateType)
+    {
+        // KSeF odrzuca zakres ponad 100 dni (21405); rok musi przejść dzięki podziałowi na okna.
+        await LoginAsync(TestData.RandomNip());
+        string from = DateTime.Today.AddYears(-1).ToString("yyyy-MM-dd");
+
+        CliResult result = await Ksef("list", "--date-type", dateType, "--from", from);
+
+        Assert.True(result.ExitCode == 0, result.Stderr);
+    }
+
+    [Fact]
+    public async Task List_RefreshesExpiredAccessToken()
+    {
+        string nip = TestData.RandomNip();
+        await LoginAsync(nip);
+        KsefSession session = SessionStore.Resolve("test", nip);
+        SessionStore.Save(session with { AccessToken = new() { Token = session.AccessToken.Token, ValidUntil = DateTimeOffset.UtcNow.AddMinutes(-1) } });
+
+        CliResult result = await Ksef("list");
+
+        Assert.True(result.ExitCode == 0, result.Stderr);
+        Assert.NotEqual(session.AccessToken.Token, SessionStore.Resolve("test", nip).AccessToken.Token);
+    }
 }
