@@ -348,10 +348,14 @@ public class GetOrchestrationTests
 
         CliResult result = await ksef.RunAsync(dir.Path, "get", KsefA);
 
-        Assert.Equal(1, result.ExitCode);
-        Assert.Equal("", result.Stdout);
-        Assert.StartsWith("ksef: ", result.Stderr);
-        Assert.DoesNotContain("   at ", result.Stderr);
+        // Raz (2026-10-30, make test-aot) padło bez treści asercji i nie dało się tego powtórzyć
+        // (0 na 250 pełnych przebiegów JIT/AOT) — przy następnym razie komunikat mówi, co się stało.
+        string diagnostics = $"exit {result.ExitCode}, url {ksef.Url}, żądania: [{string.Join(", ", ksef.Requests.Select(r => $"{r.Method} {r.Path}"))}], "
+            + $"stdout: {result.Stdout}, stderr: {result.Stderr}";
+        Assert.True(result.ExitCode == 1, diagnostics);
+        Assert.True(result.Stdout.Length == 0, diagnostics);
+        Assert.True(result.Stderr.StartsWith("ksef: ", StringComparison.Ordinal), diagnostics);
+        Assert.False(result.Stderr.Contains("   at ", StringComparison.Ordinal), diagnostics);
     }
 }
 
