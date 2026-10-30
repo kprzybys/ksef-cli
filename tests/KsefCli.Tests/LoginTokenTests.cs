@@ -126,6 +126,8 @@ public class LoginTokenOfflineTests
     [Theory]
     [InlineData]
     [InlineData("--cert", "a.pem", "--token-file", "t")]
+    [InlineData("--request", "--signed", "s.xml")]
+    [InlineData("--cert", "a.pem", "--request")]
     public async Task Login_RequiresExactlyOneMethod(params string[] method)
     {
         using TempDir dir = new();
@@ -133,6 +135,6 @@ public class LoginTokenOfflineTests
         CliResult result = await Ksef.RunAsync(dir.Path, ["login", "--nip", Nip, .. method]);
 
         Assert.NotEqual(0, result.ExitCode);
-        Assert.Contains("dokładnie jedno: --cert (certyfikat) albo --token-file (token KSeF)", result.Stderr);
+        Assert.Contains("dokładnie jedną metodę: --cert (certyfikat), --token-file (token KSeF), --request albo --signed", result.Stderr);
     }
 }

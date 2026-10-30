@@ -490,4 +490,21 @@ public class KsefTestEnvironmentTests : IDisposable
 
         Assert.True(result.ExitCode == 0, result.Stderr);
     }
+
+    [Fact]
+    public async Task Login_ExternallySignedRequest()
+    {
+        // Podpis „innym programem”: żądanie z --request, podpis poza ksef, wysyłka przez --signed (ze stdin).
+        string nip = TestData.RandomNip();
+        using TempDir dir = new();
+        CliResult request = await Ksef("login", "--nip", nip, "--request");
+        Assert.True(request.ExitCode == 0, request.Stderr);
+        string signed = await LoginExternalTests.SignExternallyAsync(dir, nip, request.Stdout);
+
+        CliResult login = await Tests.Ksef.RunAsync(runtime.Path, System.Text.Encoding.UTF8.GetBytes(signed), "login", "--nip", nip, "--signed", "-");
+
+        Assert.True(login.ExitCode == 0, login.Stderr);
+        Assert.Equal(0, (await Ksef("session")).ExitCode);
+        Assert.Equal(0, (await Ksef("logout", "--nip", nip)).ExitCode);
+    }
 }

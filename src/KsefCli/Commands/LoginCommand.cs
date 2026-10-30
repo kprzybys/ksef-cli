@@ -20,7 +20,7 @@ namespace KsefCli.Commands;
 /// w <see cref="SessionStore"/>. Przy sukcesie milczy. Token KSeF to sekret — tylko z pliku albo stdin,
 /// nigdy z argumentu (widać go w `ps` i historii powłoki).
 /// </summary>
-public static class LoginCommand
+public static partial class LoginCommand
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan PollTimeout = TimeSpan.FromMinutes(2);
@@ -38,28 +38,46 @@ public static class LoginCommand
             Description = "Plik z tokenem KSeF (pierwszy niepusty wiersz); `-` = stdin, np. `pass show ksef/token | ksef login --token-file -`",
         };
 
-        Command command = new("login", "Logowanie do KSeF certyfikatem (XAdES) albo tokenem KSeF; sesja trafia do $XDG_RUNTIME_DIR/ksef");
+        Option<bool> requestOption = new("--request")
+        {
+            Description = "Wypisz na stdout niepodpisane żądanie logowania (XML z wyzwaniem KSeF) do podpisania innym programem, np. Profilem Zaufanym",
+        };
+        Option<string> signedOption = new("--signed")
+        {
+            Description = "Wyślij żądanie z --request podpisane innym programem (XAdES); `-` = stdin",
+        };
+
+        Command command = new("login", "Logowanie do KSeF certyfikatem (XAdES), tokenem KSeF albo żądaniem podpisanym innym programem; sesja trafia do $XDG_RUNTIME_DIR/ksef");
         command.Options.Add(nipOption);
         command.Options.Add(certOption);
         command.Options.Add(tokenOption);
+        command.Options.Add(requestOption);
+        command.Options.Add(signedOption);
         command.Validators.Add(result =>
         {
-            if ((result.GetValue(certOption) is null) == (result.GetValue(tokenOption) is null))
+            int methods = new[] { result.GetValue(certOption), result.GetValue(tokenOption), result.GetValue(signedOption) }.Count(v => v is not null)
+                + (result.GetValue(requestOption) ? 1 : 0);
+            if (methods != 1)
             {
-                result.AddError("Podaj dokładnie jedno: --cert (certyfikat) albo --token-file (token KSeF).");
+                result.AddError("Podaj dokładnie jedną metodę: --cert (certyfikat), --token-file (token KSeF), --request albo --signed (podpis innym programem).");
             }
         });
-        command.SetAction(async (parseResult, cancellationToken) => parseResult.GetValue(tokenOption) is { } tokenPath
-            ? await RunWithTokenAsync(
-                KsefEnvironment.Parse(parseResult.GetRequiredValue(envOption)),
-                parseResult.GetRequiredValue(nipOption),
-                tokenPath,
-                cancellationToken)
-            : await RunAsync(
-                KsefEnvironment.Parse(parseResult.GetRequiredValue(envOption)),
-                parseResult.GetRequiredValue(nipOption),
-                parseResult.GetRequiredValue(certOption),
-                cancellationToken));
+        command.SetAction(async (parseResult, cancellationToken) =>
+        {
+            KsefEnvironment env = KsefEnvironment.Parse(parseResult.GetRequiredValue(envOption));
+            string nip = parseResult.GetRequiredValue(nipOption);
+            if (parseResult.GetValue(requestOption))
+            {
+                return await WriteRequestAsync(env, nip, cancellationToken);
+            }
+            if (parseResult.GetValue(signedOption) is { } signedPath)
+            {
+                return await RunWithSignedRequestAsync(env, nip, signedPath, cancellationToken);
+            }
+            return parseResult.GetValue(tokenOption) is { } tokenPath
+                ? await RunWithTokenAsync(env, nip, tokenPath, cancellationToken)
+                : await RunAsync(env, nip, parseResult.GetRequiredValue(certOption), cancellationToken);
+        });
         return command;
     }
 
@@ -183,20 +201,25 @@ public static class LoginCommand
     private static async Task<KsefSession> AuthenticateAsync(
         IAuthorizationClient authorization, KsefEnvironment env, string nip, X509Certificate2 certificate, CancellationToken cancellationToken)
     {
-        AuthenticationChallengeResponse challenge = await authorization.GetAuthChallengeAsync(cancellationToken);
-
-        AuthenticationTokenRequest request = AuthTokenRequestBuilder.Create()
-            .WithChallenge(challenge.Challenge)
-            .WithContext(AuthenticationTokenContextIdentifierType.Nip, nip)
-            .WithIdentifierType(AuthenticationTokenSubjectIdentifierTypeEnum.CertificateSubject)
-            .Build();
-        string signedXml = SignatureService.Sign(AuthenticationTokenRequestSerializer.SerializeToXmlString(request), certificate);
+        string signedXml = SignatureService.Sign(await NewRequestXmlAsync(authorization, nip, cancellationToken), certificate);
 
         SignatureResponse submission = await authorization.SubmitXadesAuthRequestAsync(signedXml, cancellationToken: cancellationToken);
         return await CompleteAsync(authorization, env, nip, submission, cancellationToken);
     }
 
-    /// <summary>Wspólny koniec obu metod: czekanie na weryfikację w KSeF i wymiana na tokeny sesji.</summary>
+    /// <summary>Żądanie logowania XAdES z nowym wyzwaniem KSeF — do podpisania certyfikatem albo innym programem.</summary>
+    private static async Task<string> NewRequestXmlAsync(IAuthorizationClient authorization, string nip, CancellationToken cancellationToken)
+    {
+        AuthenticationChallengeResponse challenge = await authorization.GetAuthChallengeAsync(cancellationToken);
+        AuthenticationTokenRequest request = AuthTokenRequestBuilder.Create()
+            .WithChallenge(challenge.Challenge)
+            .WithContext(AuthenticationTokenContextIdentifierType.Nip, nip)
+            .WithIdentifierType(AuthenticationTokenSubjectIdentifierTypeEnum.CertificateSubject)
+            .Build();
+        return AuthenticationTokenRequestSerializer.SerializeToXmlString(request);
+    }
+
+    /// <summary>Wspólny koniec wszystkich metod: czekanie na weryfikację w KSeF i wymiana na tokeny sesji.</summary>
     private static async Task<KsefSession> CompleteAsync(
         IAuthorizationClient authorization, KsefEnvironment env, string nip, SignatureResponse submission, CancellationToken cancellationToken)
     {

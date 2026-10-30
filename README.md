@@ -123,6 +123,18 @@ Token jest sekretem, więc `ksef` przyjmuje go tylko z pliku albo stdin, nigdy j
 w `ps` i historii powłoki). Liczy się pierwszy niepusty wiersz. KSeF dostaje token zaszyfrowany kluczem
 publicznym MF razem z czasem wyzwania.
 
+Trzecia — podpis innym programem (Profil Zaufany, aplikacja do podpisu kwalifikowanego na karcie):
+`ksef` wypisuje niepodpisane żądanie z wyzwaniem KSeF, a po podpisaniu je wysyła.
+
+```bash
+ksef login --nip 5908996669 --request > logowanie.xml
+# podpisz logowanie.xml podpisem XAdES otaczanym (enveloped), np. na gov.pl (Profil Zaufany)
+ksef login --nip 5908996669 --signed logowanie-podpisany.xml
+```
+
+Wyzwanie jest ważne kilka minut, więc podpisać trzeba od razu. Przed wysyłką `ksef` sprawdza tylko, czy plik
+to podpisane żądanie logowania dla tego NIP-u; sam podpis weryfikuje KSeF.
+
 Sesje (access token ważny ok. 15 min, refresh token 7 dni) to stan narzędzia, nie trwały sekret:
 `$XDG_RUNTIME_DIR/ksef/<środowisko>-<NIP>.json` z prawami 0600 — katalog w RAM, znika po wylogowaniu
 z systemu. Komendy wymagające logowania same odświeżają access token. Przy kilku sesjach w jednym
