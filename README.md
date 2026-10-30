@@ -59,7 +59,8 @@ nie trzeba pobierać.
 | `ksef session [-a] [--json]` | nie | Lokalne sesje: środowisko, NIP, ważność (bez tokenów). Kod wyjścia 1, gdy brak sesji. |
 | `ksef list [--subject buyer\|seller\|third\|authorized] [--from D] [--to D] [--date-type issue\|invoicing\|storage] [--json]` | tak | Metadane faktur z KSeF. Domyślnie faktury otrzymane (`buyer`) od 1. dnia bieżącego miesiąca. TSV bez nagłówka: numer KSeF, numer faktury, data wystawienia, NIP i nazwa sprzedawcy, identyfikator i nazwa nabywcy, brutto, waluta. Daty `RRRR-MM-DD` (czas lokalny, „do” włącznie) albo ISO 8601. Zakres dłuższy niż limit KSeF (100 dni) dzielony automatycznie; wynik obcięty przez KSeF do 10 000 pozycji pobierany dalej od ostatniej daty, bez powtórek. Pusty wynik to kod 0. |
 | `ksef send [pliki\|-]... [--json]` | tak | Wysyła faktury FA(3) w jednej sesji interaktywnej i czeka na numery KSeF. Najpierw ta sama kontrola co `validate` — jeśli któryś plik jej nie przejdzie, nie wysyła nic. Wynik TSV: numer KSeF, plik, numer sesji (do UPO); odrzucone (np. 440 duplikat z `originalKsefNumber`) na stderr. Kod wyjścia: 0 wszystkie przyjęte, 1 jest błąd. |
-| `ksef get [numery\|-]... [-d katalog]` | tak | XML faktur po numerze KSeF — bajt w bajt to, co wysłał wystawca. Numery z argumentów albo ze stdin (pierwsza kolumna TSV, więc `ksef list \| ksef get -d faktury/` działa bez `cut`). Jeden numer bez `-d`: XML na stdout. Z `-d`: pliki `<numer KSeF>.xml` (zapis atomowy), ścieżki na stdout; już pobrane pomija bez sieci. Kod wyjścia: 0 wszystkie pobrane, 1 jest błąd. |
+| `ksef get [numery\|-]... [-d katalog]` | tak | XML faktur po numerze KSeF — bajt w bajt to, co wysłał wystawca. Numery z argumentów albo ze stdin (pierwsza kolumna TSV, więc `ksef list \| ksef get -d faktury/` działa bez `cut`). Jeden numer bez `-d`: XML na stdout. Z `-d`: pliki `<numer KSeF>.xml` (zapis atomowy), ścieżki na stdout; już pobrane pomija bez sieci. Faktura przyjęta przed chwilą, jeszcze niedostępna (KSeF 21165), jest pobierana ponownie do 1 min. Kod wyjścia: 0 wszystkie pobrane, 1 jest błąd. |
+| `ksef upo [numery\|-]... [--session S] [--collective] [-d katalog]` | tak | Urzędowe Poświadczenie Odbioru (XML z podpisem MF). Dla faktur: numer KSeF + numer sesji wysyłki — wejście w formacie `ksef send` (numer KSeF, plik, sesja), więc `ksef send *.xml \| ksef upo -d upo/` działa wprost; numery bez kolumny sesji biorą `--session`. `--collective`: zbiorcze UPO sesji. UPO powstaje po zamknięciu sesji — komenda czeka, aż będzie gotowe (do 3 min). Jedno UPO na stdout, kilka do `-d` (`<numer KSeF>.upo.xml`, `<sesja>.upo.xml`). Kod wyjścia: 0 wszystkie pobrane, 1 jest błąd. |
 
 ## Zasady
 
@@ -80,6 +81,7 @@ ksef list --from 2026-01-01 | cut -f1                  # numery KSeF faktur otrz
 ksef list --subject seller --json | jq 'map(.grossAmount) | add'
 ksef send faktury/*.xml > wyslane.tsv                   # numer KSeF, plik, sesja
 ksef list | ksef get -d otrzymane/                      # pobiera tylko nowe faktury otrzymane
+ksef send faktury/*.xml | tee wyslane.tsv | ksef upo -d upo/   # wysyłka + UPO każdej faktury
 ```
 
 Wyszukiwanie metadanych w KSeF jest ostatecznie spójne: faktura przyjęta przed chwilą bywa widoczna
@@ -140,7 +142,9 @@ make test-aot                                    # testy CLI z E2E na binarce Na
   pełny cykl login/session/logout, certyfikat ze stdin, pieczęć, odrzucenie certyfikatu na inny NIP,
   odświeżenie wygasłego access tokenu i to, że po `logout` refresh token przestaje działać;
   wysyłka faktur (kolejność, stdin, JSON, duplikat 440 obok nowej faktury), widoczność wysłanych faktur
-  w `ksef list` po stronie sprzedawcy i — po zalogowaniu na NIP nabywcy — po stronie nabywcy.
+  w `ksef list` po stronie sprzedawcy i — po zalogowaniu na NIP nabywcy — po stronie nabywcy;
+  pobieranie faktur (bajty i SHA-256 zgodne z wysłanymi) i UPO (pojedyncze, z potoku `send`, zbiorcze),
+  z weryfikacją podpisu MF pod każdym UPO.
 
 ## Aktualizacja biblioteki MF
 

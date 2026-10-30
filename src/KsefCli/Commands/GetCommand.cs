@@ -14,6 +14,10 @@ namespace KsefCli.Commands;
 /// </summary>
 public static class GetCommand
 {
+    private const int NotYetAvailableCode = 21165;
+    private static readonly TimeSpan NotYetAvailableTimeout = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan RetryInterval = TimeSpan.FromSeconds(2);
+
     public static Command Create(Option<string> envOption)
     {
         Argument<string[]> numbersArgument = new("numery")
@@ -93,7 +97,7 @@ public static class GetCommand
                 try
                 {
                     xml = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)
-                        .GetBytes(await ksef.GetInvoiceAsync(number, await tokens.GetAsync(cancellationToken), cancellationToken));
+                        .GetBytes(await GetWhenAvailableAsync(ksef, tokens, number, cancellationToken));
                 }
                 catch (KsefApiException ex)
                 {
@@ -120,6 +124,29 @@ public static class GetCommand
         }
         return failed ? 1 : 0;
     }
+
+    /// <summary>
+    /// Faktura przyjęta przed chwilą bywa jeszcze niedostępna do pobrania (KSeF 21165 — „została przetworzona,
+    /// ale nie jest jeszcze dostępna”): ponawiamy z limitem czasu, zamiast zrzucać to na użytkownika.
+    /// </summary>
+    private static async Task<string> GetWhenAvailableAsync(IKSeFClient ksef, AccessTokenProvider tokens, string number, CancellationToken cancellationToken)
+    {
+        DateTime deadline = DateTime.UtcNow + NotYetAvailableTimeout;
+        while (true)
+        {
+            try
+            {
+                return await ksef.GetInvoiceAsync(number, await tokens.GetAsync(cancellationToken), cancellationToken);
+            }
+            catch (KsefApiException ex) when (IsNotYetAvailable(ex) && DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(RetryInterval, cancellationToken);
+            }
+        }
+    }
+
+    public static bool IsNotYetAvailable(KsefApiException ex) =>
+        ex.ErrorResponse?.Exception?.ExceptionDetailList?.Any(d => d.ExceptionCode == NotYetAvailableCode) == true;
 
     private static string PathFor(string dir, string ksefNumber) => Path.Combine(dir, ksefNumber + ".xml");
 }

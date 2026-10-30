@@ -88,6 +88,7 @@ internal static class KsefJson
 [JsonSerializable(typeof(KSeF.Client.Core.Models.Sessions.SendInvoiceRequest))]
 [JsonSerializable(typeof(KSeF.Client.Core.Models.Sessions.OnlineSession.SendInvoiceResponse))]
 [JsonSerializable(typeof(KSeF.Client.Core.Models.Sessions.SessionInvoice))]
+[JsonSerializable(typeof(KSeF.Client.Core.Models.Sessions.SessionStatusResponse))]
 // Treść błędów API (RestClient.ErrorHandling).
 [JsonSerializable(typeof(KSeF.Client.Core.Exceptions.ApiErrorResponse))]
 [JsonSerializable(typeof(KSeF.Client.Core.Exceptions.BadRequestProblemDetails))]
