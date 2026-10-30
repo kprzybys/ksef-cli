@@ -53,7 +53,7 @@ mkdir -p "$out"
         fi
         name=ksef-$KSEF_VERSION-linux-$ARCH
         mkdir -p /tmp/$name
-        cp dist/aot/ksef README.md /tmp/$name/
+        cp dist/aot/ksef README.md LICENSE THIRD-PARTY-NOTICES.md /tmp/$name/
         tar -C /tmp -czf /out/$name.tar.gz $name
         (cd /out && sha256sum $name.tar.gz > $name.tar.gz.sha256)
         chown "$HOST_UID:$HOST_GID" /out/$name.tar.gz /out/$name.tar.gz.sha256

@@ -126,7 +126,7 @@ gdzie leży klucz. Na DEMO i PROD potrzebny jest certyfikat kwalifikowany albo c
 Druga metoda to token KSeF, wygenerowany w aplikacji KSeF albo przez API po zalogowaniu certyfikatem:
 
 ```bash
-pass show ksef/token | ksef login --nip 5908996669 --token-file -
+pass show ksef/token | ksef login --nip 5908996669 --token-file -   # z menedżera haseł przez stdin
 ksef login --nip 5908996669 --token-file ~/.config/ksef/token   # albo z pliku (0600)
 ```
 
@@ -252,4 +252,10 @@ dostaje wersje poprawione.
 
 ## Sekrety
 
-Token / certyfikat KSeF trzymamy w menedżerze sekretów, nigdy w repo ani w plikach konfiguracyjnych.
+Token i certyfikat KSeF trzymaj w menedżerze sekretów (np. `pass`, KeePassXC, Vault/OpenBao) i podawaj
+`ksef` przez stdin — nigdy w repo ani w plikach konfiguracyjnych.
+
+## Licencja
+
+MIT — zob. [LICENSE](LICENSE). Składniki innych autorów (biblioteka MF, .NET, wzory FA(3)):
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
