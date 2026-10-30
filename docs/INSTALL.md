@@ -34,6 +34,27 @@ scripts/install-deps.sh --yes      # instaluje (sudo, gdy nie root)
 .NET SDK 10, którego nie ma w repozytorium dystrybucji (Ubuntu 22.04, Debian, openSUSE), skrypt instaluje
 oficjalnym `dotnet-install.sh` do `~/.dotnet` — bez sudo; trzeba dopisać `~/.dotnet` do `PATH`.
 
+## Klucz na karcie lub tokenie (PKCS#11) — wkrótce
+
+Opcjonalnie, tylko dla logowania kluczem z karty, tokenu albo TPM (`ksef login --key pkcs11:…`, funkcja
+w przygotowaniu). Moduł karty ładuje p11-kit, a OpenSSL systemu — silnik (engine) albo provider PKCS#11;
+zwykle nie trzeba nic konfigurować (opcjonalnie `PKCS11_PROVIDER_MODULE=/ścieżka/modułu.so`).
+
+```bash
+scripts/install-deps.sh --pkcs11 --yes
+```
+
+| Rodzina | Pakiety (`--pkcs11`) | Uwagi |
+|---|---|---|
+| Debian, Ubuntu | `p11-kit p11-kit-modules opensc libengine-pkcs11-openssl` + `pkcs11-provider` | provider od Ubuntu 24.04 / Debiana 13; Ubuntu 22.04 i Debian 12 — tylko silnik |
+| Fedora, RHEL, Alma | `p11-kit opensc pkcs11-provider` + `openssl-pkcs11` | RHEL/Alma 10 nie mają już silnika — tylko provider |
+| Arch | `p11-kit opensc libp11 pkcs11-provider` | |
+| openSUSE | `p11-kit opensc libp11-3 pkcs11-provider` | |
+
+Klucz w TPM: dodatkowo `libtpm2-pkcs11-1` (Debian/Ubuntu) albo `tpm2-pkcs11`; do testów bez sprzętu: `softhsm2`
+(Debian/Ubuntu) albo `softhsm`. Instalacja `--pkcs11` sprawdzona w kontenerach x64 wszystkich dystrybucji
+z tabel niżej; samo logowanie — na Ubuntu 24.04 (OpenSSL 3.0). arm64 nietestowane.
+
 ## Instalacja z wydania
 
 ```bash

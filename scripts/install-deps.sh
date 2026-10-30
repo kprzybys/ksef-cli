@@ -2,18 +2,22 @@
 # Pakiety systemowe dla ksef — rozpoznaje dystrybucję z /etc/os-release.
 #   --runtime  (domyślnie) do uruchomienia binarki: ICU, OpenSSL, libxslt, certyfikaty CA
 #   --build    do budowania ze źródeł (make build/test/aot): powyższe + clang, zlib, make, git, .NET SDK 10
+#   --pkcs11   dodatkowo klucz na karcie/tokenie (ksef login --key pkcs11:...): p11-kit, OpenSC,
+#              silnik i/lub provider PKCS#11 dla OpenSSL — tylko te, które są w repozytorium
 #   --yes      instaluje (przez sudo, gdy nie root); bez tego tylko wypisuje polecenie
 # .NET SDK 10 spoza repozytoriów dystrybucji: oficjalny dotnet-install.sh do ~/.dotnet (bez sudo).
 set -euo pipefail
 
 mode=runtime
 apply=false
+pkcs11=false
 for arg in "$@"; do
     case $arg in
         --runtime) mode=runtime ;;
         --build) mode=build ;;
+        --pkcs11) pkcs11=true ;;
         --yes) apply=true ;;
-        -h | --help) sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h | --help) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "install-deps: nieznana opcja $arg" >&2; exit 2 ;;
     esac
 done
@@ -32,11 +36,11 @@ fi
 
 # Pierwszy pakiet z repozytorium pasujący do wzorca (nazwy z numerem wersji: libicu74, libssl3t64...).
 apt_pick() {
-    apt-cache pkgnames 2>/dev/null | grep -xE "$1" | sort -V | tail -1
+    apt-cache pkgnames 2>/dev/null | grep -xE "$1" | sort -V | tail -1 || true
 }
 zypper_pick() {
     zypper --non-interactive --quiet search --type package 2>/dev/null \
-        | cut -d'|' -f2 | tr -d ' ' | grep -xE "$1" | sort -V | tail -1
+        | cut -d'|' -f2 | tr -d ' ' | grep -xE "$1" | sort -V | tail -1 || true
 }
 
 dotnet_from_distro=true
@@ -56,6 +60,12 @@ case $family in
                 dotnet_from_distro=false
             fi
         fi
+        if [[ $pkcs11 == true ]]; then
+            # pkcs11-provider od Ubuntu 24.04 / Debiana 13; starsze mają tylko silnik (engine).
+            packages+=(p11-kit p11-kit-modules opensc libengine-pkcs11-openssl)
+            provider=$(apt_pick 'pkcs11-provider')
+            [[ -z $provider ]] || packages+=("$provider")
+        fi
         install=(apt-get install -y --no-install-recommends)
         ;;
     *" fedora "* | *" rhel "* | *" centos "*)
@@ -63,6 +73,13 @@ case $family in
         packages=(libicu openssl-libs libxslt ca-certificates)
         if [[ $mode == build ]]; then
             packages+=(clang zlib-devel make git dotnet-sdk-10.0)
+        fi
+        if [[ $pkcs11 == true ]]; then
+            # Silnika openssl-pkcs11 nie ma już w RHEL/Alma 10 — tam tylko provider.
+            packages+=(p11-kit opensc pkcs11-provider)
+            if dnf -q info openssl-pkcs11 >/dev/null 2>&1; then
+                packages+=(openssl-pkcs11)
+            fi
         fi
         install=(dnf install -y)
         ;;
@@ -72,6 +89,9 @@ case $family in
         if [[ $mode == build ]]; then
             packages+=(clang zlib make git dotnet-sdk)
         fi
+        if [[ $pkcs11 == true ]]; then
+            packages+=(p11-kit opensc libp11 pkcs11-provider)
+        fi
         install=(pacman -S --needed --noconfirm)
         ;;
     *" suse "* | *" opensuse "*)
@@ -80,6 +100,9 @@ case $family in
         if [[ $mode == build ]]; then
             packages+=(clang zlib-devel make git curl)
             dotnet_from_distro=false
+        fi
+        if [[ $pkcs11 == true ]]; then
+            packages+=(p11-kit opensc "$(zypper_pick 'libp11-[0-9]+')" pkcs11-provider)
         fi
         install=(zypper --non-interactive install)
         ;;
@@ -91,7 +114,7 @@ esac
 
 for package in "${packages[@]}"; do
     if [[ -z $package ]]; then
-        echo "install-deps: nie znalazłem w repozytorium $manager któregoś z pakietów (ICU/OpenSSL/libxslt)" >&2
+        echo "install-deps: nie znalazłem w repozytorium $manager któregoś z pakietów (ICU/OpenSSL/libxslt/libp11)" >&2
         exit 1
     fi
 done
