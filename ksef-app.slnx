@@ -10,5 +10,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Ksef.Fa3.Tests/Ksef.Fa3.Tests.csproj" />
+    <Project Path="tests/KsefCli.Tests/KsefCli.Tests.csproj" />
   </Folder>
 </Solution>

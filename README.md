@@ -27,6 +27,10 @@ nie trzeba pobierać.
 | `ksef status [-e test\|demo\|prod] [--json]` | nie | Komunikaty Latarni MF o dostępności KSeF + czy API środowiska odpowiada. Kod wyjścia: 0 dostępny, 2 KSeF niedostępny/prace, 1 błąd połączenia. |
 | `ksef validate [pliki\|-]... [-v] [--json]` | nie (offline) | Kontrola przed wysyłką: wymagania KSeF (UTF-8 bez BOM, kodowanie w prologu, brak instrukcji przetwarzania, niezalecane znaki Unicode, limit 1 MB / 3 MB z załącznikiem) + schemat FA(3). Przy sukcesie milczy; błędy na stderr jako `plik:wiersz:kolumna: ...`. Kod wyjścia: 0 wszystkie poprawne, 1 jest błąd. |
 | `ksef show [plik\|-] [-o plik.html]` | nie (offline) | Podgląd faktury w HTML oficjalnym arkuszem MF (`styl.xsl`), domyślnie na stdout. |
+| `ksef cert new --nip <NIP> [--seal] [-o plik.pem]` | nie (offline) | Certyfikat testowy podpisany samym sobą (osoba `TINPL-NIP` albo pieczęć `VATPL-NIP`) jako PEM z kluczem prywatnym. Tylko dla środowiska TEST. Nie pisze klucza na terminal ani nie nadpisuje pliku; plik ma prawa 0600. |
+| `ksef login --nip <NIP> --cert <plik.pem\|->` | — | Logowanie certyfikatem (podpis XAdES wyzwania KSeF) w kontekście NIP-u. Przy sukcesie milczy. |
+| `ksef logout [--nip <NIP>]` | tak | Unieważnia sesję w KSeF i usuwa ją lokalnie. |
+| `ksef session [-a] [--json]` | nie | Lokalne sesje: środowisko, NIP, ważność (bez tokenów). Kod wyjścia 1, gdy brak sesji. |
 
 ## Zasady
 
@@ -46,6 +50,23 @@ ksef status --json | jq -r .lighthouse.status
 ```
 
 Domyślne środowisko: `test`.
+
+## Logowanie
+
+```bash
+ksef cert new --nip 5908996669 -o ~/.config/ksef/test-cert.pem   # raz; tylko TEST
+ksef login --nip 5908996669 --cert ~/.config/ksef/test-cert.pem
+ksef session
+ksef logout
+```
+
+Certyfikat można też podać na stdin (`--cert -`), np. prosto z sejfu, więc `ksef` nie musi wiedzieć,
+gdzie leży klucz. Na DEMO i PROD potrzebny jest certyfikat kwalifikowany albo certyfikat KSeF.
+
+Sesje (access token ważny ok. 15 min, refresh token 7 dni) to stan narzędzia, nie trwały sekret:
+`$XDG_RUNTIME_DIR/ksef/<środowisko>-<NIP>.json` z prawami 0600 — katalog w RAM, znika po wylogowaniu
+z systemu. Komendy wymagające logowania same odświeżają access token. Przy kilku sesjach w jednym
+środowisku wskazuje się `--nip`.
 
 ## Faktury FA(3)
 
@@ -70,10 +91,17 @@ po walidacji pliku nie wolno przeformatowywać.
 ## Testy
 
 ```bash
-dotnet test --project tests/Ksef.Fa3.Tests
+dotnet test --project tests/Ksef.Fa3.Tests      # model FA(3), walidacja, podgląd — offline
+dotnet test --project tests/KsefCli.Tests       # CLI — offline (testy na KSeF TEST pominięte)
+KSEF_E2E=1 dotnet test --project tests/KsefCli.Tests   # + testy na żywym KSeF TEST
 ```
 
-Testy wypełniają przykładowe faktury MF z submodułu, walidują je i przepuszczają przez wygenerowane klasy.
+- `Ksef.Fa3.Tests` wypełniają przykładowe faktury MF z submodułu, walidują je i przepuszczają przez wygenerowane klasy.
+- `KsefCli.Tests` uruchamiają zbudowany `ksef` jako proces (stdout/stderr, kody wyjścia, stdin, prawa plików,
+  odmowa wypisania klucza na terminal przez `script`) oraz sprawdzają NIP i magazyn sesji, w tym odświeżanie tokenu.
+- Testy E2E (`KSEF_E2E=1`) logują się na KSeF TEST certyfikatami podpisanymi samym sobą, każdy na losowy NIP:
+  pełny cykl login/session/logout, certyfikat ze stdin, pieczęć, odrzucenie certyfikatu na inny NIP,
+  odświeżenie wygasłego access tokenu i to, że po `logout` refresh token przestaje działać.
 
 ## Aktualizacja biblioteki MF
 

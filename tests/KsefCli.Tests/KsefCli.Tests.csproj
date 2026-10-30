@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" Version="4.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Testy CLI uruchamiają zbudowany ksef.dll jako osobny proces (prawdziwe stdin/stdout/stderr i kody wyjścia). -->
+    <ProjectReference Include="..\..\src\KsefCli\KsefCli.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\external\ksef-client-csharp\KSeF.Client.Tests.Core\Templates\invoice-template-fa-3.xml" Link="Templates\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
