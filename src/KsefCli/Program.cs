@@ -1,0 +1,17 @@
+using System.CommandLine;
+using KsefCli;
+using KsefCli.Commands;
+
+Option<string> envOption = new("--env", "-e")
+{
+    Description = "Środowisko KSeF: test, demo, prod",
+    DefaultValueFactory = _ => "test",
+    Recursive = true,
+};
+envOption.AcceptOnlyFromAmong(KsefEnvironment.Names);
+
+RootCommand root = new("ksef — obsługa KSeF z wiersza poleceń (oficjalny klient MF)");
+root.Options.Add(envOption);
+root.Subcommands.Add(StatusCommand.Create(envOption));
+
+return await root.Parse(args).InvokeAsync();

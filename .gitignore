@@ -1,0 +1,11 @@
+bin/
+obj/
+*.user
+.vs/
+.idea/
+# dane i sekrety nigdy w repo
+*.pfx
+*.p12
+*.key
+*.pem
+.env

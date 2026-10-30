@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/external/" />
+  <Folder Name="/external/ksef-client-csharp/">
+    <Project Path="external/ksef-client-csharp/KSeF.Client.Core/KSeF.Client.Core.csproj" />
+    <Project Path="external/ksef-client-csharp/KSeF.Client/KSeF.Client.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/KsefCli/KsefCli.csproj" />
+  </Folder>
+</Solution>
