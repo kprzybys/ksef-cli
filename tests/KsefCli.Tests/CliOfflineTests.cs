@@ -265,7 +265,7 @@ public class CliOfflineTests : IDisposable
     public async Task Login_CertificateWithoutKey_Fails()
     {
         CliResult generated = await Ksef.RunAsync(dir.Path, "cert", "new", "--nip", "5908996669");
-        string certOnly = generated.Stdout[..(generated.Stdout.IndexOf("-----END CERTIFICATE-----") + "-----END CERTIFICATE-----".Length)];
+        string certOnly = generated.Stdout[..(generated.Stdout.IndexOf("-----END CERTIFICATE-----", StringComparison.Ordinal) + "-----END CERTIFICATE-----".Length)];
 
         CliResult result = await Ksef.RunAsync(dir.Path, Encoding.ASCII.GetBytes(certOnly), "login", "--nip", "5908996669", "--cert", "-");
 

@@ -51,7 +51,7 @@ public static class GetCommand
             CliIo.Error("brak numerów KSeF.");
             return 1;
         }
-        if (dir is null && numbers.Distinct().Count() > 1)
+        if (dir is null && numbers.Distinct(StringComparer.Ordinal).Count() > 1)
         {
             CliIo.Error("kilka faktur naraz zapisuję tylko do katalogu — podaj -d <katalog>.");
             return 1;
@@ -68,7 +68,7 @@ public static class GetCommand
             if (numbers.All(n => File.Exists(PathFor(dir, n))))
             {
                 // Wszystko już pobrane — bez sesji i bez sieci.
-                foreach (string number in numbers.Distinct())
+                foreach (string number in numbers.Distinct(StringComparer.Ordinal))
                 {
                     Console.Out.WriteLine(PathFor(dir, number));
                 }
@@ -85,7 +85,7 @@ public static class GetCommand
             AccessTokenProvider tokens = new(session, scope.ServiceProvider.GetRequiredService<IAuthorizationClient>());
             IKSeFClient ksef = scope.ServiceProvider.GetRequiredService<IKSeFClient>();
 
-            foreach (string number in numbers.Distinct())
+            foreach (string number in numbers.Distinct(StringComparer.Ordinal))
             {
                 if (dir is not null && File.Exists(PathFor(dir, number)))
                 {

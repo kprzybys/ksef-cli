@@ -139,6 +139,6 @@ public static partial class KsefDocumentRules
     private static Fa3ValidationError Error(int line, int column, string message) =>
         new(XmlSeverityType.Error, line, column, message, Source);
 
-    [GeneratedRegex("""^<\?xml\s[^?]*?encoding\s*=\s*["'](?<enc>[^"']+)["']""")]
+    [GeneratedRegex("""^<\?xml\s[^?]*?encoding\s*=\s*["'](?<enc>[^"']+)["']""", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex XmlDeclaration();
 }

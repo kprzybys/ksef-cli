@@ -1,0 +1,54 @@
+root = true
+
+# Submoduł external/ksef-client-csharp ma własny .editorconfig (root = true) i Directory.Build.props,
+# więc nic stąd go nie dotyczy.
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{csproj,props,targets,slnx,xml,json,yml,yaml}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[Makefile]
+indent_style = tab
+
+[*.cs]
+# Analizatory (Directory.Build.props: latest-recommended + Meziantou.Analyzer); ostrzeżenie = błąd budowania.
+# Wyłączone świadomie:
+# CLI bez SynchronizationContext — ConfigureAwait(false) nic nie daje.
+dotnet_diagnostic.MA0004.severity = none
+# Kilka małych typów w jednym pliku (np. komenda z rekordami opcji) to styl tego repo.
+dotnet_diagnostic.MA0048.severity = none
+# == na stringach jest porządkowe (ordinal) — string.Equals nic nie zmienia.
+dotnet_diagnostic.MA0006.severity = none
+# Długość metody oceniamy w review, nie licznikiem linii.
+dotnet_diagnostic.MA0051.severity = none
+
+[tests/**.cs]
+# Nazwy testów Metoda_Scenariusz_Wynik.
+dotnet_diagnostic.CA1707.severity = none
+# Klasy testowe: Dispose sprząta katalog tymczasowy, finalizatorów brak.
+dotnet_diagnostic.CA1816.severity = none
+dotnet_diagnostic.CA1861.severity = none
+dotnet_diagnostic.CA1711.severity = none
+# Domyślny komparator stringów jest porządkowy; w asercjach jawny StringComparer tylko zaciemnia.
+dotnet_diagnostic.MA0002.severity = none
+# Atrapy w testach mogą rzucać dowolnym wyjątkiem.
+dotnet_diagnostic.CA2201.severity = none
+# Wzorce w atrapach i szablonach testowych nie dostają niezaufanych danych.
+dotnet_diagnostic.MA0009.severity = none
+
+# Oficjalne pliki MF i kod z xscgen — bez zmian (CRLF i białe znaki jak w źródle).
+[{schemas/**,stylesheets/**,src/Ksef.Fa3/Generated/**}]
+end_of_line = unset
+trim_trailing_whitespace = unset
+insert_final_newline = unset
+charset = unset

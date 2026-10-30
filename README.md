@@ -173,6 +173,26 @@ make test-aot                                    # testy CLI z E2E na binarce Na
   pobieranie faktur (bajty i SHA-256 zgodne z wysłanymi) i UPO (pojedyncze, z potoku `send`, zbiorcze),
   z weryfikacją podpisu MF pod każdym UPO.
 
+## Jakość kodu
+
+```bash
+make hooks   # raz po sklonowaniu: bramka pre-commit
+make fmt     # białe znaki w C# (dotnet format)
+make lint    # dotnet format --verify-no-changes + pre-commit na całym repo
+make audit   # znane luki w pakietach naszych projektów (także przechodnich)
+make check   # lint + build + test — przed commitem
+```
+
+- Każdy `dotnet build` uruchamia analizatory Roslyn (`latest-recommended`, reguły bezpieczeństwa `All`),
+  Meziantou.Analyzer i NuGetAudit; ostrzeżenie przerywa budowanie (`Directory.Build.props`).
+  Wyłączone reguły z uzasadnieniem są w `.editorconfig`. Nie dotyczy to submodułu biblioteki MF
+  ani publikacji AOT (tam ostrzeżenia ILC pilnuje `aot-warnings.txt`).
+- Napisy w kodzie produkcyjnym: porównania i sortowanie z `StringComparer.Ordinal` / `StringComparison.Ordinal`,
+  liczby i daty z `CultureInfo.InvariantCulture` — kwoty i daty faktur nie mogą zależeć od ustawień systemu.
+- pre-commit: higiena plików, `detect-private-key`, gitleaks, blokada `*.pfx/*.p12/*.pem/*.key`,
+  `dotnet format`, shellcheck, ruff i markdownlint. Wymaga `uv`, `gitleaks` i `dotnet` w `PATH`.
+  `schemas/`, `stylesheets/` i `src/Ksef.Fa3/Generated/` zostają bajt w bajt jak w źródle.
+
 ## Aktualizacja biblioteki MF
 
 ```bash

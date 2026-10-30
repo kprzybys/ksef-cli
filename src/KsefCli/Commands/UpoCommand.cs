@@ -276,6 +276,6 @@ public static partial class UpoCommand
     }
 
     // Numer strony UPO z odpowiedzi KSeF trafia do nazwy pliku — tylko bezpieczne znaki.
-    [System.Text.RegularExpressions.GeneratedRegex("^[0-9A-Za-z-]{1,100}$")]
+    [System.Text.RegularExpressions.GeneratedRegex("^[0-9A-Za-z-]{1,100}$", System.Text.RegularExpressions.RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial System.Text.RegularExpressions.Regex SafeName();
 }

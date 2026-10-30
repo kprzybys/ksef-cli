@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography.Xml;
 using System.Text;
 using System.Xml;
@@ -270,7 +271,7 @@ public class GetRetryTests
 public class KsefRetryTests
 {
     private static KSeF.Client.Core.Exceptions.KsefRateLimitException RateLimit(int seconds) =>
-        KSeF.Client.Core.Exceptions.KsefRateLimitException.FromRetryAfterHeader("429", seconds.ToString());
+        KSeF.Client.Core.Exceptions.KsefRateLimitException.FromRetryAfterHeader("429", seconds.ToString(CultureInfo.InvariantCulture));
 
     [Fact]
     public async Task RateLimit_WaitsRecommendedDelayAndRetries()

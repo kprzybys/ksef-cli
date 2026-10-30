@@ -1,0 +1,17 @@
+<Project>
+  <!-- Bramka jakości dla src/ i tests/. Submoduł external/ksef-client-csharp ma własny Directory.Build.props,
+       więc MSBuild tu nie dochodzi. Wyłączenia reguł z uzasadnieniem: .editorconfig. -->
+  <PropertyGroup>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <AnalysisModeSecurity>All</AnalysisModeSecurity>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <!-- Nie przy publikacji AOT: znane ostrzeżenia ILC z biblioteki MF pilnuje src/KsefCli/aot-warnings.txt. -->
+    <TreatWarningsAsErrors Condition="'$(KsefAot)' != 'true'">true</TreatWarningsAsErrors>
+    <!-- Luki także w zależnościach przechodnich (np. System.Security.Cryptography.* z KSeF.Client). -->
+    <NuGetAuditMode>all</NuGetAuditMode>
+    <NuGetAuditLevel>low</NuGetAuditLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Meziantou.Analyzer" Version="3.0.318" PrivateAssets="all" IncludeAssets="runtime; build; native; contentfiles; analyzers" />
+  </ItemGroup>
+</Project>

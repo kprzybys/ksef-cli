@@ -106,7 +106,7 @@ internal static class KsefJson
 [JsonSerializable(typeof(KSeF.Client.Core.Exceptions.ProblemDetails))]
 [JsonSerializable(typeof(Dictionary<string, object>))]
 [JsonSerializable(typeof(JsonElement))]
-internal partial class MfJsonContext : JsonSerializerContext;
+internal sealed partial class MfJsonContext : JsonSerializerContext;
 
 /// <summary>Wynik komend z --json (camelCase, enumy jako tekst).</summary>
 [JsonSourceGenerationOptions(JsonSerializerDefaults.Web,
@@ -118,9 +118,9 @@ internal partial class MfJsonContext : JsonSerializerContext;
 [JsonSerializable(typeof(List<Commands.SessionCommands.SessionInfo>))]
 [JsonSerializable(typeof(List<Commands.SendCommand.SendResult>))]
 [JsonSerializable(typeof(IReadOnlyList<KSeF.Client.Core.Models.Invoices.InvoiceSummary>))]
-internal partial class CliJsonContext : JsonSerializerContext;
+internal sealed partial class CliJsonContext : JsonSerializerContext;
 
 /// <summary>Pliki sesji w $XDG_RUNTIME_DIR/ksef.</summary>
 [JsonSourceGenerationOptions(JsonSerializerDefaults.Web, WriteIndented = true)]
 [JsonSerializable(typeof(KsefSession))]
-internal partial class SessionJsonContext : JsonSerializerContext;
+internal sealed partial class SessionJsonContext : JsonSerializerContext;

@@ -60,7 +60,7 @@ public static class SessionStore
         return [.. System.IO.Directory.EnumerateFiles(directory, "*.json")
             .Select(Read)
             .Where(s => environment is null || s.Environment == environment)
-            .OrderBy(s => s.Environment).ThenBy(s => s.Nip)];
+            .OrderBy(s => s.Environment, StringComparer.Ordinal).ThenBy(s => s.Nip, StringComparer.Ordinal)];
     }
 
     /// <summary>Sesja dla podanego NIP-u albo jedyna sesja w środowisku, gdy NIP nie podano.</summary>

@@ -21,7 +21,7 @@ public sealed record KsefEnvironment(string Name, string ApiUrl)
             "test" => Test,
             "demo" => Demo,
             "prod" => Prod,
-            _ => throw new ArgumentException($"Nieznane środowisko: {name}. Dozwolone: {string.Join(", ", Names)}."),
+            _ => throw new ArgumentException($"Nieznane środowisko: {name}. Dozwolone: {string.Join(", ", Names)}.", nameof(name)),
         };
         return Environment.GetEnvironmentVariable(ApiUrlVariable) is { Length: > 0 } url ? env with { ApiUrl = url } : env;
     }

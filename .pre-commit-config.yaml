@@ -1,0 +1,60 @@
+# Lokalna bramka przed commitem. Instalacja: make hooks; ręcznie na całym repo: make lint.
+# Oficjalne pliki MF (schemas/, stylesheets/) i kod z xscgen (src/Ksef.Fa3/Generated/) zostają bajt w bajt.
+minimum_pre_commit_version: "3.0.0"
+exclude: ^(schemas/|stylesheets/|src/Ksef\.Fa3/Generated/)
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-json
+      - id: check-xml
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+      - id: detect-private-key
+
+  # Tokeny KSeF, hasła certyfikatów i klucze — gitleaks z systemu (~/.local/bin), skanuje to, co idzie do commitu.
+  - repo: local
+    hooks:
+      - id: gitleaks
+        name: gitleaks
+        entry: gitleaks git --pre-commit --staged --redact --no-banner
+        language: system
+        pass_filenames: false
+      - id: no-certificates
+        name: bez certyfikatów i kluczy (.pfx/.p12/.pem/.key)
+        entry: certyfikaty i klucze nie trafiają do repo
+        language: fail
+        files: \.(pfx|p12|pem|key)$
+      # Tylko białe znaki (tryb --folder, bez budowania); reguły analizatorów pilnuje dotnet build.
+      - id: dotnet-format
+        name: dotnet format whitespace
+        entry: dotnet format whitespace --folder --exclude src/Ksef.Fa3/Generated external --verify-no-changes --include
+        language: system
+        types: [c#]
+
+  - repo: https://github.com/koalaman/shellcheck-precommit
+    rev: v0.11.0
+    hooks:
+      - id: shellcheck
+        # Bez sugestii stylu (np. SC2001 przy wcinaniu wielu linii przez sed).
+        args: ["--severity=warning"]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.3
+    hooks:
+      - id: ruff-check
+      - id: ruff-format
+
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.45.0
+    hooks:
+      - id: markdownlint
+        args: ["--disable", "MD013", "MD033", "MD041"]

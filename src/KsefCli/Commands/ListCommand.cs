@@ -13,7 +13,7 @@ namespace KsefCli.Commands;
 /// </summary>
 public static class ListCommand
 {
-    private static readonly Dictionary<string, InvoiceSubjectType> Subjects = new()
+    private static readonly Dictionary<string, InvoiceSubjectType> Subjects = new(StringComparer.Ordinal)
     {
         ["buyer"] = InvoiceSubjectType.Subject2,
         ["seller"] = InvoiceSubjectType.Subject1,
@@ -21,7 +21,7 @@ public static class ListCommand
         ["authorized"] = InvoiceSubjectType.SubjectAuthorized,
     };
 
-    private static readonly Dictionary<string, DateType> DateTypes = new()
+    private static readonly Dictionary<string, DateType> DateTypes = new(StringComparer.Ordinal)
     {
         ["issue"] = DateType.Issue,
         ["invoicing"] = DateType.Invoicing,

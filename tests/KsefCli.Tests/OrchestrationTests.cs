@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -45,7 +46,7 @@ public class SendOrchestrationTests
         });
         ksef.On("GET", $@"sessions/{Session}/invoices/20261030-EE-(\d{{10}})-0000000000-00", (_, match) =>
         {
-            int n = int.Parse(match.Groups[1].Value);
+            int n = int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
             return status?.Invoke(n) ?? InvoiceStatus(200, "Sukces", KsefNumber(n));
         });
         ksef.On("POST", $"sessions/online/{Session}/close", (_, _) => new FakeResponse(204));
@@ -88,7 +89,7 @@ public class SendOrchestrationTests
             Assert.Equal(Convert.ToBase64String(SHA256.HashData(bytes)), (string?)request.Json!["invoiceHash"]);
             Assert.Equal(bytes.Length, (long)request.Json!["invoiceSize"]!);
         }
-        Assert.All(ksef.Requests.Where(r => !r.Path.StartsWith("security/")), r => Assert.Equal($"Bearer {FakeKsef.AccessToken}", r.Authorization));
+        Assert.All(ksef.Requests.Where(r => !r.Path.StartsWith("security/", StringComparison.Ordinal)), r => Assert.Equal($"Bearer {FakeKsef.AccessToken}", r.Authorization));
         Assert.Single(ksef.RequestsTo("POST", $"sessions/online/{Session}/close"));
     }
 

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using KSeF.Client.Core.Exceptions;
 using KSeF.Client.Core.Interfaces.Clients;
@@ -247,7 +248,7 @@ public class KsefTestEnvironmentTests : IDisposable
     {
         // KSeF odrzuca zakres ponad 100 dni (21405); rok musi przejść dzięki podziałowi na okna.
         await LoginAsync(TestData.RandomNip());
-        string from = DateTime.Today.AddYears(-1).ToString("yyyy-MM-dd");
+        string from = DateTime.Today.AddYears(-1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
         CliResult result = await Ksef("list", "--date-type", dateType, "--from", from);
 
@@ -434,7 +435,7 @@ public class KsefTestEnvironmentTests : IDisposable
         Assert.True(first.ExitCode == 0, first.Stderr);
         string[] files = first.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries);
         Assert.Equal(sent.Select(r => Path.Combine(target, r[0] + ".xml")).Order(), files.Order());
-        Assert.All(files, f => Assert.Equal(File.ReadAllBytes(sent.Single(r => f.EndsWith(r[0] + ".xml"))[1]), File.ReadAllBytes(f)));
+        Assert.All(files, f => Assert.Equal(File.ReadAllBytes(sent.Single(r => f.EndsWith(r[0] + ".xml", StringComparison.Ordinal))[1]), File.ReadAllBytes(f)));
         Assert.Empty(Directory.GetFiles(target, "*.tmp"));
 
         DateTime[] written = [.. files.Select(File.GetLastWriteTimeUtc)];
@@ -483,7 +484,7 @@ public class KsefTestEnvironmentTests : IDisposable
         // Kilka lat = kilkanaście okien po 90 dni szybko po sobie: bez czekania na Retry-After KSeF odrzuca
         // serię (429, „8 żądań na sekundę”). Losowy NIP: limit godzinowy (20 zapytań) liczy się per kontekst.
         await LoginAsync(TestData.RandomNip());
-        string from = DateTime.Today.AddYears(-4).ToString("yyyy-MM-dd");
+        string from = DateTime.Today.AddYears(-4).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
         CliResult result = await Ksef("list", "--from", from);
 

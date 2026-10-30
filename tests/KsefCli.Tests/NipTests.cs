@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace KsefCli.Tests;
 
 public class NipTests
@@ -25,7 +27,7 @@ public class NipTests
         // Suma modulo 11 równa 10 nie daje cyfry kontrolnej — takiego NIP-u nie wydaje się,
         // więc żadna ostatnia cyfra nie może go „naprawić”.
         string prefix = Enumerable.Range(123_000_000, 1000) // prefiks zgodny ze wzorcem KSeF — odrzuca tylko suma
-            .Select(n => n.ToString())
+            .Select(n => n.ToString(CultureInfo.InvariantCulture))
             .First(p => p.Zip(new[] { 6, 5, 7, 2, 3, 4, 5, 6, 7 }, (c, w) => (c - '0') * w).Sum() % 11 == 10);
 
         Assert.All(Enumerable.Range(0, 10), d => Assert.False(Nip.IsValid(prefix + d)));

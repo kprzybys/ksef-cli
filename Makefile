@@ -33,3 +33,29 @@ install: aot
 clean:
 	rm -rf dist
 	dotnet clean ksef-app.slnx -c Release
+
+# Jakość kodu. Analizatory (Roslyn latest-recommended + Meziantou) i NuGetAudit działają w każdym
+# `dotnet build` — ostrzeżenie przerywa budowanie (Directory.Build.props, wyłączenia w .editorconfig).
+.PHONY: fmt lint audit hooks check
+
+FORMAT := dotnet format whitespace --folder --exclude src/Ksef.Fa3/Generated external
+
+fmt:
+	$(FORMAT)
+
+# Białe znaki w C# i higiena pozostałych plików (pre-commit na całym repo).
+lint:
+	$(FORMAT) --verify-no-changes
+	uvx pre-commit run --all-files
+
+# Znane luki w pakietach (także przechodnich) naszych projektów; NuGetAudit robi to samo przy restore.
+audit:
+	for p in src/*/*.csproj tests/*/*.csproj; do \
+		dotnet list $$p package --vulnerable --include-transitive || exit 1; \
+	done
+
+hooks:
+	uvx pre-commit install
+
+# Przed commitem: lint + build z analizatorami + testy.
+check: lint build test

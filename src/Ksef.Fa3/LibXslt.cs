@@ -21,7 +21,7 @@ internal static unsafe partial class LibXslt
         }
         catch (DllNotFoundException ex)
         {
-            throw new XsltException($"brak biblioteki libxslt — zainstaluj pakiet libxslt1.1 ({ex.Message})");
+            throw new XsltException($"brak biblioteki libxslt — zainstaluj pakiet libxslt1.1 ({ex.Message})", ex);
         }
     }
 

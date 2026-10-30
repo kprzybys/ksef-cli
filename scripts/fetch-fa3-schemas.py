@@ -7,6 +7,7 @@ oraz adresy schematów-słowników w parametrach XSLT czytanych przez document()
 
 Użycie: scripts/fetch-fa3-schemas.py [URL katalogu wzoru]
 """
+
 import re
 import sys
 import urllib.parse
@@ -39,7 +40,11 @@ def fetch_tree(root_url: str, out_dir: Path) -> None:
         def localize(match: re.Match[str]) -> str:
             target = urllib.parse.urljoin(url, match.group(2))
             queue.append(target)
-            return match.group(1) + Path(urllib.parse.urlparse(target).path).name + match.group(3)
+            return (
+                match.group(1)
+                + Path(urllib.parse.urlparse(target).path).name
+                + match.group(3)
+            )
 
         for pattern in (SCHEMA_LOCATION, XSL_HREF, DOCUMENT_PARAM):
             text = pattern.sub(localize, text)
