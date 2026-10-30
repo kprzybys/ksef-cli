@@ -7,7 +7,26 @@
     <Nullable>enable</Nullable>
     <AssemblyName>ksef</AssemblyName>
     <RootNamespace>KsefCli</RootNamespace>
+    <!-- Analizatory trimmingu/AOT przy każdym buildzie. -->
+    <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
+
+  <!-- Refleksja w naszym kodzie to błąd kompilacji. Nie przy publikacji AOT: tam analiza całego programu
+       zgłasza też znane miejsca w bibliotece MF, obsłużone w KsefJson, XmlDsigAlgorithms i ILLink.Descriptors.xml. -->
+  <PropertyGroup Condition="'$(KsefAot)' != 'true'">
+    <WarningsAsErrors>$(WarningsAsErrors);IL2026;IL2075;IL3050</WarningsAsErrors>
+  </PropertyGroup>
+
+  <!-- Native AOT: make aot (dotnet publish -p:KsefAot=true). Własna właściwość zamiast PublishAot
+       z wiersza poleceń, bo ta trafiałaby też do bibliotek MF dla netstandard2.0 (NETSDK1207). -->
+  <PropertyGroup Condition="'$(KsefAot)' == 'true'">
+    <PublishAot>true</PublishAot>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- XmlSerializer żądania logowania (AuthenticationTokenRequest) czyta model przez refleksję. -->
+    <TrimmerRootDescriptor Include="ILLink.Descriptors.xml" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="System.CommandLine" Version="2.0.14" />

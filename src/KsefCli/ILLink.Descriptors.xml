@@ -1,0 +1,19 @@
+<linker>
+  <!-- Native AOT: XmlSerializer (żądanie XAdES logowania, AuthenticationTokenRequestSerializer z biblioteki MF)
+       czyta typy i właściwości przez refleksję — trimmer nie może ich wyciąć. -->
+  <assembly fullname="KSeF.Client.Core">
+    <type fullname="KSeF.Client.Core.Models.Authorization.AuthenticationTokenRequest" preserve="all" />
+    <type fullname="KSeF.Client.Core.Models.Authorization.AuthenticationTokenContextIdentifier" preserve="all" />
+    <type fullname="KSeF.Client.Core.Models.Authorization.AuthenticationTokenContextIdentifierType" preserve="all" />
+    <type fullname="KSeF.Client.Core.Models.Authorization.AuthenticationTokenSubjectIdentifierTypeEnum" preserve="all" />
+    <type fullname="KSeF.Client.Core.Models.Authorization.AuthenticationTokenAuthorizationPolicy" preserve="all" />
+    <type fullname="KSeF.Client.Core.Models.Authorization.AuthenticationTokenAllowedIps" preserve="all" />
+  </assembly>
+  <assembly fullname="System.Private.CoreLib">
+    <!-- XmlSerializer wymaga indeksatora i Add na List<string> (AllowedIps). -->
+    <type fullname="System.Collections.Generic.List`1">
+      <property name="Item" />
+      <method name="Add" />
+    </type>
+  </assembly>
+</linker>

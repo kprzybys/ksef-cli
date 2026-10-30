@@ -13,21 +13,30 @@ internal sealed record CliResult(int ExitCode, byte[] StdoutBytes, string Stderr
     public string Stdout => Encoding.UTF8.GetString(StdoutBytes);
 }
 
-/// <summary>Uruchamia zbudowany `ksef.dll` jako proces z własnym, tymczasowym `XDG_RUNTIME_DIR`.</summary>
+/// <summary>
+/// Uruchamia `ksef` jako proces z własnym, tymczasowym `XDG_RUNTIME_DIR`: zbudowany `ksef.dll`,
+/// a gdy ustawiono `KSEF_BIN` — wskazaną binarkę (make test-aot: te same testy na Native AOT).
+/// </summary>
 internal static class Ksef
 {
     private static readonly string Dll = Path.Combine(AppContext.BaseDirectory, "ksef.dll");
 
+    // Ścieżka bezwzględna: testy działają w katalogu bin/ projektu testów.
+    private static readonly string? Binary = Environment.GetEnvironmentVariable("KSEF_BIN") is { Length: > 0 } bin ? bin : null;
+
     public static async Task<CliResult> RunAsync(string runtimeDir, byte[]? stdin, params string[] args)
     {
-        ProcessStartInfo start = new("dotnet")
+        ProcessStartInfo start = new(Binary ?? "dotnet")
         {
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
         };
-        start.ArgumentList.Add(Dll);
+        if (Binary is null)
+        {
+            start.ArgumentList.Add(Dll);
+        }
         foreach (string arg in args)
         {
             start.ArgumentList.Add(arg);

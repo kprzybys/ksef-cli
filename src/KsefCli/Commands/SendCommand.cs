@@ -26,7 +26,8 @@ public static class SendCommand
     private static readonly TimeSpan PollTimeout = TimeSpan.FromMinutes(5);
 
     // Index: pozycja pliku na wejściu — ten sam plik może wystąpić dwa razy.
-    private sealed record SendResult(
+    // internal: typ wyniku --json musi być widoczny dla CliJsonContext.
+    internal sealed record SendResult(
         int Index, string File, string SessionReferenceNumber, string? InvoiceReferenceNumber, string? KsefNumber,
         int? Code, string? Description, IReadOnlyCollection<string>? Details, IDictionary<string, string>? Extensions)
     {

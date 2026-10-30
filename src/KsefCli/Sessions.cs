@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using KSeF.Client.Core.Interfaces.Clients;
 using KSeF.Client.Core.Models.Authorization;
 
@@ -16,7 +17,9 @@ public static class SessionStore
     // Odświeżamy z zapasem, żeby token nie wygasł w trakcie żądania.
     private static readonly TimeSpan RefreshMargin = TimeSpan.FromMinutes(1);
 
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
+    private static readonly JsonSerializerOptions JsonOptions = KsefJson.Configure(new(JsonSerializerDefaults.Web) { WriteIndented = true }, SessionJsonContext.Default);
+
+    private static JsonTypeInfo<KsefSession> SessionTypeInfo => (JsonTypeInfo<KsefSession>)JsonOptions.GetTypeInfo(typeof(KsefSession));
 
     public static string Directory
     {
@@ -42,7 +45,7 @@ public static class SessionStore
         };
         using (FileStream stream = new(temp, options))
         {
-            JsonSerializer.Serialize(stream, session, JsonOptions);
+            JsonSerializer.Serialize(stream, session, SessionTypeInfo);
         }
         File.Move(temp, path, overwrite: true);
     }
@@ -105,7 +108,7 @@ public static class SessionStore
     private static KsefSession Read(string path)
     {
         using FileStream stream = File.OpenRead(path);
-        return JsonSerializer.Deserialize<KsefSession>(stream, JsonOptions)
+        return JsonSerializer.Deserialize(stream, SessionTypeInfo)
             ?? throw new SessionException($"Uszkodzony plik sesji: {path}");
     }
 }

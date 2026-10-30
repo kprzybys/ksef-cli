@@ -10,7 +10,8 @@ namespace KsefCli.Commands;
 /// </summary>
 public static class ValidateCommand
 {
-    private sealed record FileResult(string File, bool Valid, IReadOnlyList<Fa3ValidationError> Errors);
+    // internal: typ wyniku --json musi być widoczny dla CliJsonContext.
+    internal sealed record FileResult(string File, bool Valid, IReadOnlyList<Fa3ValidationError> Errors);
 
     public static Command Create()
     {

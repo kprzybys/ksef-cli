@@ -8,7 +8,8 @@ namespace KsefCli.Commands;
 /// <summary>`ksef logout` i `ksef session` — zamknięcie i przegląd lokalnych sesji KSeF.</summary>
 public static class SessionCommands
 {
-    private sealed record SessionInfo(string Environment, string Nip, string ReferenceNumber, DateTimeOffset AccessValidUntil, DateTimeOffset RefreshValidUntil);
+    // internal: typ wyniku --json musi być widoczny dla CliJsonContext.
+    internal sealed record SessionInfo(string Environment, string Nip, string ReferenceNumber, DateTimeOffset AccessValidUntil, DateTimeOffset RefreshValidUntil);
 
     public static Command CreateLogout(Option<string> envOption)
     {

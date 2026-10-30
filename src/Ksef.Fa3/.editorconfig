@@ -1,0 +1,4 @@
+# Model z xscgen ma atrybuty DataAnnotations (MinLength/MaxLength), które analizator trimmingu
+# oznacza jako refleksyjne. CLI ich nie używa: faktury sprawdza XSD (Fa3Schema) i KsefDocumentRules.
+[Generated/**.cs]
+dotnet_diagnostic.IL2026.severity = none

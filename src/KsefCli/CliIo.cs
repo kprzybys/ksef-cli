@@ -3,6 +3,7 @@ using System.Runtime.Versioning;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 
 // Narzędzie dla Linuksa: prawa plików (0600/0700), $XDG_RUNTIME_DIR.
 [assembly: SupportedOSPlatform("linux")]
@@ -17,14 +18,13 @@ public static class CliIo
 {
     public const string StdStream = "-";
 
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    private static readonly JsonSerializerOptions JsonOptions = KsefJson.Configure(new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,
         // Polskie znaki wprost, nie jako \uXXXX — wynik czyta też człowiek, a jq radzi sobie z obydwoma.
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-        Converters = { new JsonStringEnumConverter() },
-    };
+    }, CliJsonContext.Default);
 
     public static Option<bool> JsonOption() => new("--json")
     {
@@ -88,7 +88,9 @@ public static class CliIo
         File.Move(temp, path, overwrite: true);
     }
 
-    public static void WriteJson<T>(T value) => Console.Out.WriteLine(JsonSerializer.Serialize(value, JsonOptions));
+    /// <summary>Typ wyniku musi być w <see cref="CliJsonContext"/>.</summary>
+    public static void WriteJson<T>(T value) =>
+        Console.Out.WriteLine(JsonSerializer.Serialize(value, (JsonTypeInfo<T>)JsonOptions.GetTypeInfo(typeof(T))));
 
     public static void Error(string message) => Console.Error.WriteLine($"ksef: {message}");
 }

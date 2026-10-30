@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Xml;
 using System.Xml.Serialization;
@@ -5,6 +6,8 @@ using System.Xml.Serialization;
 namespace Ksef.Fa3;
 
 /// <summary>Odczyt i zapis faktury FA(3) do/z wygenerowanych klas.</summary>
+[RequiresUnreferencedCode("XmlSerializer czyta model przez refleksję.")]
+[RequiresDynamicCode("XmlSerializer generuje kod w trakcie działania.")]
 public static class Fa3Serializer
 {
     private static readonly XmlSerializer Serializer = new(typeof(Faktura));

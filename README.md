@@ -8,6 +8,8 @@ budowanej ze źródeł — bez paczek z GitHub Packages.
 
 - .NET SDK 10 (`sudo apt install dotnet-sdk-10.0`). SDK 8 nie zbuduje biblioteki: jej projekty
   deklarują net8.0, net9.0 i net10.0 jednocześnie.
+- Native AOT (`make aot`): `clang` i `zlib1g-dev`.
+- `ksef show`: libxslt (`libxslt1.1`, w praktyce zawsze zainstalowany).
 
 ## Budowanie
 
@@ -16,6 +18,30 @@ git clone --recurse-submodules=external/ksef-client-csharp <repo>   # albo: git 
 dotnet build src/KsefCli -c Release
 src/KsefCli/bin/Release/net10.0/ksef --help
 ```
+
+## Native AOT
+
+```bash
+make aot          # dist/aot/ksef — jedna natywna binarka, bez .NET na maszynie docelowej
+make install      # ~/.local/bin/ksef
+make test-aot     # testy CLI (z E2E na KSeF TEST) na binarce AOT
+```
+
+Start ok. 15 ms zamiast ok. 250 ms w JIT. Biblioteka MF nie wspiera AOT
+([CIRFMF/ksef-client-csharp#6](https://github.com/CIRFMF/ksef-client-csharp/issues/6)), więc dostosowujemy ją
+z zewnątrz, bez forka:
+
+- JSON: konteksty generowane przy kompilacji w `src/KsefCli/KsefJson.cs` — także dla biblioteki MF, której
+  prywatne opcje (`JsonUtil._settings`) podmieniamy po każdej rejestracji klienta (`KsefServices.AddKsefClient`).
+  Ten sam kod działa w JIT, więc brak typu w kontekście wychodzi już w zwykłych testach.
+  **Każdy nowy typ JSON** (żądanie/odpowiedź MF w nowej komendzie, rekord wyniku `--json`) dopisujemy do
+  kontekstu. Brakujące typy wypisze tryb odkrywania:
+  `KSEF_JSON_DISCOVER=/tmp/braki.txt KSEF_E2E=1 dotnet test --project tests/KsefCli.Tests`.
+- Podpis XAdES: algorytmy, które `SignedXml` tworzy po nazwie, rejestrujemy typem (`XmlDsigAlgorithms.cs`);
+  model żądania logowania dla `XmlSerializer` chroni przed trimmerem `ILLink.Descriptors.xml`.
+- Podgląd HTML: libxslt przez P/Invoke (`src/Ksef.Fa3/LibXslt.cs`) zamiast `XslCompiledTransform`, który
+  generuje kod w czasie działania (przy okazji `show` trwa 0,1 s zamiast 1,7 s).
+- Analizatory AOT działają przy każdym buildzie; refleksja w naszym kodzie to błąd kompilacji.
 
 Zagnieżdżonego submodułu biblioteki (`ksef-pdf-generator`, używany tylko przez jej aplikację testową)
 nie trzeba pobierać.
@@ -88,7 +114,7 @@ z systemu. Komendy wymagające logowania same odświeżają access token. Przy k
 - `src/Ksef.Fa3/` — klasy C# wygenerowane ze schematu (`scripts/generate-fa3.sh`, narzędzie
   `dotnet-xscgen` z `dotnet-tools.json`), walidator XSD (`Fa3Schema`),
   wymagania KSeF ponad XSD (`KsefDocumentRules`, wg `ksef-api/faktury/weryfikacja-faktury.md`),
-  oba naraz (`Fa3Validator`), podgląd HTML (`Fa3Html`) i odczyt/zapis (`Fa3Serializer`). Katalogu `Generated/` nie edytujemy ręcznie.
+  oba naraz (`Fa3Validator`), podgląd HTML (`Fa3Html`, libxslt) i odczyt/zapis (`Fa3Serializer`). Katalogu `Generated/` nie edytujemy ręcznie.
 - Nowa wersja schematu: `scripts/fetch-fa3-schemas.py <URL> && scripts/generate-fa3.sh`, potem testy.
 
 XSD sprawdza strukturę, nie logikę (sumy VAT, adnotacje) — tę trzeba sprawdzać osobno.
@@ -104,6 +130,7 @@ po walidacji pliku nie wolno przeformatowywać.
 dotnet test --project tests/Ksef.Fa3.Tests      # model FA(3), walidacja, podgląd — offline
 dotnet test --project tests/KsefCli.Tests       # CLI — offline (testy na KSeF TEST pominięte)
 KSEF_E2E=1 dotnet test --project tests/KsefCli.Tests   # + testy na żywym KSeF TEST
+make test-aot                                    # testy CLI z E2E na binarce Native AOT (KSEF_BIN=dist/aot/ksef)
 ```
 
 - `Ksef.Fa3.Tests` wypełniają przykładowe faktury MF z submodułu, walidują je i przepuszczają przez wygenerowane klasy.
@@ -123,7 +150,8 @@ git -C external/ksef-client-csharp checkout <tag>     # np. 2.10.0
 git add external/ksef-client-csharp
 ```
 
-Przed zmianą tagu przejrzyj `RELEASE_NOTES.md` biblioteki. W `src/KsefCli/KsefCli.csproj` są przypięte
+Przed zmianą tagu przejrzyj `RELEASE_NOTES.md` biblioteki, a po zmianie uruchom `make test-aot`
+(wychodzą nowe typy JSON i zmiany wewnętrzne, na których opiera się dostosowanie do AOT). W `src/KsefCli/KsefCli.csproj` są przypięte
 `System.Security.Cryptography.Pkcs/Xml` 10.0.14 (2.9.0 ciągnie 10.0.10 z lukami DoS) — usuń, gdy biblioteka
 podbije zależności. Ostrzeżenia NU1902/NU1903 przy budowaniu dotyczą projektu biblioteki; binarka `ksef`
 dostaje wersje poprawione.

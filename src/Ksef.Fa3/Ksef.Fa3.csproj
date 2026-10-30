@@ -5,6 +5,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>Ksef.Fa3</RootNamespace>
+    <!-- Analizatory trimmingu/AOT przy każdym buildzie: CLI publikujemy też jako Native AOT (make aot). -->
+    <IsAotCompatible>true</IsAotCompatible>
+    <!-- Wiązanie do libxslt (LibXslt.cs). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>

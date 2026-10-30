@@ -10,7 +10,7 @@ public static class KsefServices
     public static ServiceProvider Create(KsefEnvironment env)
     {
         ServiceCollection services = new();
-        services.AddKSeFClient(options => options.BaseUrl = env.ApiUrl);
+        services.AddKsefClient(env);
         return services.BuildServiceProvider();
     }
 
@@ -21,10 +21,22 @@ public static class KsefServices
     public static async Task<ServiceProvider> CreateWithCryptographyAsync(KsefEnvironment env, CancellationToken cancellationToken)
     {
         ServiceCollection services = new();
-        services.AddKSeFClient(options => options.BaseUrl = env.ApiUrl);
+        services.AddKsefClient(env);
         services.AddCryptographyClient();
         ServiceProvider provider = services.BuildServiceProvider();
         await provider.GetRequiredService<ICryptographyService>().WarmupAsync(cancellationToken);
         return provider;
+    }
+
+    /// <summary>
+    /// Rejestracja klienta MF zawsze tędy: AddKSeFClient resetuje opcje JSON biblioteki,
+    /// więc zaraz po nim podpinamy konteksty generowane i algorytmy podpisu (Native AOT).
+    /// </summary>
+    public static IServiceCollection AddKsefClient(this IServiceCollection services, KsefEnvironment env)
+    {
+        services.AddKSeFClient(options => options.BaseUrl = env.ApiUrl);
+        KsefJson.InstallInKsefClient();
+        XmlDsigAlgorithms.Register();
+        return services;
     }
 }

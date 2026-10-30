@@ -13,13 +13,14 @@ namespace KsefCli.Commands;
 /// </summary>
 public static class StatusCommand
 {
-    private sealed record LighthouseResult(string? Status, IReadOnlyList<Message> Messages, string? Error);
+    // internal: typ wyniku --json musi być widoczny dla CliJsonContext.
+    internal sealed record LighthouseResult(string? Status, IReadOnlyList<Message> Messages, string? Error);
 
-    private sealed record CertificateResult(IReadOnlyList<string> Usage, DateTimeOffset ValidTo);
+    internal sealed record CertificateResult(IReadOnlyList<string> Usage, DateTimeOffset ValidTo);
 
-    private sealed record ApiResult(string Environment, string Url, bool Reachable, IReadOnlyList<CertificateResult> Certificates, string? Error);
+    internal sealed record ApiResult(string Environment, string Url, bool Reachable, IReadOnlyList<CertificateResult> Certificates, string? Error);
 
-    private sealed record StatusResult(LighthouseResult Lighthouse, ApiResult Api);
+    internal sealed record StatusResult(LighthouseResult Lighthouse, ApiResult Api);
 
     public static Command Create(Option<string> envOption)
     {
@@ -38,7 +39,7 @@ public static class StatusCommand
     private static async Task<int> RunAsync(KsefEnvironment env, bool json, CancellationToken cancellationToken)
     {
         ServiceCollection services = new();
-        services.AddKSeFClient(options => options.BaseUrl = env.ApiUrl);
+        services.AddKsefClient(env);
         // Latarnia TEST służy do testów integracji z samą Latarnią; o dostępności KSeF informuje PROD.
         services.AddLighthouseClient(LighthouseEnvironmentsUris.PROD);
         services.AddSingleton<ICryptographyClient, CryptographyClient>();
