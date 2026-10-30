@@ -224,6 +224,29 @@ public class KsefTestEnvironmentTests : IDisposable
     private static string[][] Rows(CliResult result) =>
         [.. result.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(line => line.Split('\t'))];
 
+    /// <summary>
+    /// `ksef list` aż pojawią się podane faktury: wyszukiwanie metadanych w KSeF jest ostatecznie spójne,
+    /// świeżo przyjęta faktura bywa widoczna dopiero po kilku sekundach.
+    /// </summary>
+    private async Task<CliResult> ListUntilAsync(IEnumerable<string> ksefNumbers, params string[] args)
+    {
+        HashSet<string> expected = [.. ksefNumbers];
+        DateTime deadline = DateTime.UtcNow.AddSeconds(60);
+        while (true)
+        {
+            CliResult result = await Ksef(["list", .. args]);
+            Assert.True(result.ExitCode == 0, result.Stderr);
+            string[] listed = args.Contains("--json")
+                ? [.. JsonDocument.Parse(result.Stdout).RootElement.EnumerateArray().Select(e => e.GetProperty("ksefNumber").GetString()!)]
+                : [.. Rows(result).Select(r => r[0])];
+            if (expected.IsSubsetOf(listed) || DateTime.UtcNow > deadline)
+            {
+                return result;
+            }
+            await Task.Delay(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+        }
+    }
+
     [Fact]
     public async Task Send_TwoInvoices_ReturnsKsefNumbersInInputOrder_AndListShowsThem()
     {
@@ -245,8 +268,7 @@ public class KsefTestEnvironmentTests : IDisposable
         });
 
         // Faktury są już widoczne w KSeF (data przyjęcia = dziś; data wystawienia we wzorze jest stara).
-        CliResult listed = await Ksef("list", "--subject", "seller", "--date-type", "invoicing");
-        Assert.True(listed.ExitCode == 0, listed.Stderr);
+        CliResult listed = await ListUntilAsync(rows.Select(r => r[0]), "--subject", "seller", "--date-type", "invoicing");
         Assert.Equal(rows.Select(r => r[0]).Order(), Rows(listed).Select(r => r[0]).Order());
         Assert.All(Rows(listed), r => Assert.Equal(nip, r[3]));
     }
@@ -317,12 +339,86 @@ public class KsefTestEnvironmentTests : IDisposable
         string ksefNumber = Rows(await Ksef("send", "--nip", seller, WriteInvoice("a.xml", TestData.InvoiceToSend(seller, buyer))))[0][0];
         await LoginAsync(buyer);
 
-        CliResult listed = await Ksef("list", "--nip", buyer, "--date-type", "invoicing");
+        CliResult listed = await ListUntilAsync([ksefNumber], "--nip", buyer, "--date-type", "invoicing");
 
-        Assert.True(listed.ExitCode == 0, listed.Stderr);
         string[] row = Assert.Single(Rows(listed));
         Assert.Equal(ksefNumber, row[0]);
         Assert.Equal(seller, row[3]);
         Assert.Equal(buyer, row[5]);
+    }
+
+    [Fact]
+    public async Task Get_ReturnsExactlyTheSentBytes()
+    {
+        string nip = TestData.RandomNip();
+        await LoginAsync(nip);
+        byte[] sent = TestData.InvoiceToSend(nip);
+        string ksefNumber = Rows(await Ksef("send", WriteInvoice("a.xml", sent)))[0][0];
+
+        CliResult got = await Ksef("get", ksefNumber);
+
+        Assert.True(got.ExitCode == 0, got.Stderr);
+        Assert.Equal(sent, got.StdoutBytes);
+
+        // Skrót SHA-256 z metadanych KSeF zgadza się z pobranym plikiem.
+        using JsonDocument listed = JsonDocument.Parse((await ListUntilAsync([ksefNumber], "--subject", "seller", "--date-type", "invoicing", "--json")).Stdout);
+        string hash = Assert.Single(listed.RootElement.EnumerateArray()).GetProperty("invoiceHash").GetString()!;
+        Assert.Equal(Convert.ToBase64String(System.Security.Cryptography.SHA256.HashData(got.StdoutBytes)), hash);
+    }
+
+    [Fact]
+    public async Task Get_FromListIntoDirectory_IsIdempotent()
+    {
+        string nip = TestData.RandomNip();
+        await LoginAsync(nip);
+        string[][] sent = Rows(await Ksef("send", WriteInvoice("a.xml", TestData.InvoiceToSend(nip)), WriteInvoice("b.xml", TestData.InvoiceToSend(nip))));
+        string target = Path.Combine(runtime.Path, "faktury");
+        byte[] list = (await ListUntilAsync(sent.Select(r => r[0]), "--subject", "seller", "--date-type", "invoicing")).StdoutBytes;
+
+        CliResult first = await Tests.Ksef.RunAsync(runtime.Path, list, "get", "-d", target);
+        Assert.True(first.ExitCode == 0, first.Stderr);
+        string[] files = first.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(sent.Select(r => Path.Combine(target, r[0] + ".xml")).Order(), files.Order());
+        Assert.All(files, f => Assert.Equal(File.ReadAllBytes(sent.Single(r => f.EndsWith(r[0] + ".xml"))[1]), File.ReadAllBytes(f)));
+        Assert.Empty(Directory.GetFiles(target, "*.tmp"));
+
+        DateTime[] written = [.. files.Select(File.GetLastWriteTimeUtc)];
+        CliResult second = await Tests.Ksef.RunAsync(runtime.Path, list, "get", "-d", target);
+        Assert.Equal(0, second.ExitCode);
+        Assert.Equal(first.Stdout, second.Stdout);
+        Assert.Equal(written, files.Select(File.GetLastWriteTimeUtc));
+    }
+
+    [Fact]
+    public async Task Get_UnknownNumber_FailsButFetchesTheRest()
+    {
+        string nip = TestData.RandomNip();
+        await LoginAsync(nip);
+        string ksefNumber = Rows(await Ksef("send", WriteInvoice("a.xml", TestData.InvoiceToSend(nip))))[0][0];
+        string unknown = $"{nip}-20261030-000000000000-00";
+        string target = Path.Combine(runtime.Path, "faktury");
+
+        CliResult result = await Ksef("get", "-d", target, unknown, ksefNumber);
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Contains($"{unknown}: 21164", result.Stderr);
+        Assert.Equal($"{Path.Combine(target, ksefNumber)}.xml\n", result.Stdout);
+        Assert.False(File.Exists(Path.Combine(target, unknown + ".xml")));
+    }
+
+    [Fact]
+    public async Task Get_BuyerCanDownloadReceivedInvoice()
+    {
+        string seller = TestData.RandomNip();
+        string buyer = TestData.RandomNip();
+        await LoginAsync(seller);
+        byte[] invoice = TestData.InvoiceToSend(seller, buyer);
+        string ksefNumber = Rows(await Ksef("send", "--nip", seller, WriteInvoice("a.xml", invoice)))[0][0];
+        await LoginAsync(buyer);
+
+        CliResult got = await Ksef("get", "--nip", buyer, ksefNumber);
+
+        Assert.True(got.ExitCode == 0, got.Stderr);
+        Assert.Equal(invoice, got.StdoutBytes);
     }
 }

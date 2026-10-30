@@ -348,6 +348,67 @@ public class CliOfflineTests : IDisposable
         Assert.Contains("ksef login", result.Stderr);
     }
 
+    private const string KsefNumberA = "5908996669-20261030-7A9B0D000000-89";
+    private const string KsefNumberB = "5908996669-20261030-7A9B1AC00000-98";
+
+    [Fact]
+    public async Task Get_NoNumbers_Fails()
+    {
+        CliResult result = await Ksef.RunAsync(dir.Path, ""u8.ToArray(), "get");
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Contains("brak numerów KSeF", result.Stderr);
+    }
+
+    [Theory]
+    [InlineData("abc")]
+    [InlineData("5908996669-20261030-7A9B0D000000")] // bez sumy kontrolnej
+    [InlineData("1000000006-20261030-7A9B0D000000-89")] // NIP spoza wzorca KSeF
+    public async Task Get_InvalidKsefNumber_IsRejectedBeforeContactingKsef(string number)
+    {
+        CliResult result = await Ksef.RunAsync(dir.Path, "get", number);
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Contains($"niepoprawny numer KSeF: {number}", result.Stderr);
+    }
+
+    [Fact]
+    public async Task Get_SeveralNumbersToStdout_RequiresDirectory()
+    {
+        CliResult result = await Ksef.RunAsync(dir.Path, "get", KsefNumberA, KsefNumberB);
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Contains("-d", result.Stderr);
+    }
+
+    [Fact]
+    public async Task Get_AllAlreadyDownloaded_NeedsNeitherSessionNorNetwork()
+    {
+        // Wejście w formacie `ksef list` (TSV): numer KSeF w pierwszej kolumnie, powtórka i pusty wiersz.
+        string target = Path.Combine(dir.Path, "faktury");
+        Directory.CreateDirectory(target);
+        File.WriteAllText(Path.Combine(target, KsefNumberA + ".xml"), "<a/>");
+        File.WriteAllText(Path.Combine(target, KsefNumberB + ".xml"), "<b/>");
+        byte[] tsv = Encoding.UTF8.GetBytes($"{KsefNumberB}\tFV/2\n\n{KsefNumberA}\tFV/1\n{KsefNumberB}\tFV/2\n");
+
+        CliResult result = await Ksef.RunAsync(dir.Path, tsv, "get", "-d", target);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Empty(result.Stderr);
+        Assert.Equal($"{target}/{KsefNumberB}.xml\n{target}/{KsefNumberA}.xml\n", result.Stdout);
+        Assert.Equal("<a/>", File.ReadAllText(Path.Combine(target, KsefNumberA + ".xml")));
+    }
+
+    [Fact]
+    public async Task Get_MissingFileWithoutSession_ExplainsHowToLogIn()
+    {
+        CliResult result = await Ksef.RunAsync(dir.Path, "get", "-d", Path.Combine(dir.Path, "nowy"), KsefNumberA);
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Contains("ksef login", result.Stderr);
+        Assert.True(Directory.Exists(Path.Combine(dir.Path, "nowy")));
+    }
+
     [Fact]
     public async Task UnknownEnvironment_IsRejected()
     {

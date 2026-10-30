@@ -58,6 +58,36 @@ public static class CliIo
         stdout.Write(content);
     }
 
+    /// <summary>
+    /// Identyfikatory z argumentów albo — gdy brak lub `-` — ze stdin, po jednym w wierszu; z wiersza bierzemy
+    /// pierwszą kolumnę TSV, więc wynik `ksef list` / `ksef send` można przekazać dalej bez `cut`.
+    /// </summary>
+    public static IReadOnlyList<string> ReadIdentifiers(string[] args)
+    {
+        if (args is not [] and not [StdStream])
+        {
+            return args;
+        }
+        List<string> identifiers = [];
+        while (Console.In.ReadLine() is { } line)
+        {
+            string first = line.Split('\t', 2)[0].Trim();
+            if (first.Length > 0)
+            {
+                identifiers.Add(first);
+            }
+        }
+        return identifiers;
+    }
+
+    /// <summary>Zapis przez plik tymczasowy i zmianę nazwy — przerwany zapis nie zostawia uciętego pliku.</summary>
+    public static void WriteFileAtomically(string path, byte[] content)
+    {
+        string temp = path + ".tmp";
+        File.WriteAllBytes(temp, content);
+        File.Move(temp, path, overwrite: true);
+    }
+
     public static void WriteJson<T>(T value) => Console.Out.WriteLine(JsonSerializer.Serialize(value, JsonOptions));
 
     public static void Error(string message) => Console.Error.WriteLine($"ksef: {message}");
