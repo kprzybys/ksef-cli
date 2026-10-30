@@ -71,8 +71,8 @@ ksef --help
 ## Budowanie ze źródeł
 
 ```bash
-git clone --recurse-submodules=external/ksef-client-csharp https://github.com/kprzybys/ksef-app.git
-cd ksef-app
+git clone --recurse-submodules=external/ksef-client-csharp https://github.com/kprzybys/ksef-cli.git
+cd ksef-cli
 scripts/install-deps.sh --build --yes
 make aot && make install          # ~/.local/bin/ksef
 ```

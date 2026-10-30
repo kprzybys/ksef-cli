@@ -1,4 +1,4 @@
-# ksef-app
+# ksef-cli
 
 CLI do obsługi KSeF 2.0 na oficjalnej bibliotece MF
 [`CIRFMF/ksef-client-csharp`](https://github.com/CIRFMF/ksef-client-csharp) (MIT),

@@ -8,14 +8,14 @@ PREFIX ?= $(HOME)/.local
 .PHONY: build test test-e2e aot test-aot release test-distros install clean
 
 build:
-	dotnet build ksef-app.slnx -c Release
+	dotnet build ksef-cli.slnx -c Release
 
 # Testy bez sieci; test-e2e dokłada testy na żywym KSeF TEST.
 test:
-	dotnet test --solution ksef-app.slnx -c Release
+	dotnet test --solution ksef-cli.slnx -c Release
 
 test-e2e:
-	KSEF_E2E=1 dotnet test --solution ksef-app.slnx -c Release
+	KSEF_E2E=1 dotnet test --solution ksef-cli.slnx -c Release
 
 # Jedna natywna binarka $(AOT_DIR)/ksef (bez .NET na maszynie docelowej). Nowe ostrzeżenie kompilatora
 # AOT (spoza src/KsefCli/aot-warnings.txt) przerywa budowanie. KSEF_VERSION=… trafia do `ksef --version`
@@ -56,7 +56,7 @@ install: aot
 
 clean:
 	rm -rf dist
-	dotnet clean ksef-app.slnx -c Release
+	dotnet clean ksef-cli.slnx -c Release
 
 # Jakość kodu. Analizatory (Roslyn latest-recommended + Meziantou) i NuGetAudit działają w każdym
 # `dotnet build` — ostrzeżenie przerywa budowanie (Directory.Build.props, wyłączenia w .editorconfig).
