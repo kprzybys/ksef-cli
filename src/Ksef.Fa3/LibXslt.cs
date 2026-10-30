@@ -7,7 +7,6 @@ namespace Ksef.Fa3;
 /// <summary>Minimalne wiązanie do libxslt (pakiet libxslt1.1): arkusz z pliku, dokument z pamięci, wynik wg xsl:output.</summary>
 internal static unsafe partial class LibXslt
 {
-    private const string Xml2 = "libxml2.so.2";
     private const string Xslt = "libxslt.so.1";
 
     // Dokument wejściowy nigdy nie sięga do sieci; bez NOENT/DTDLOAD encje zewnętrzne nie są ładowane.
@@ -19,9 +18,9 @@ internal static unsafe partial class LibXslt
         {
             return TransformCore(stylesheetPath, input);
         }
-        catch (DllNotFoundException ex)
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
         {
-            throw new XsltException($"brak biblioteki libxslt — zainstaluj pakiet libxslt1.1 ({ex.Message})", ex);
+            throw new XsltException($"brak biblioteki libxslt — zainstaluj pakiet libxslt1.1 (Fedora/RHEL/Arch: libxslt) ({ex.Message})", ex);
         }
     }
 
@@ -36,9 +35,11 @@ internal static unsafe partial class LibXslt
         nint result = 0;
         try
         {
+            var readMemory = (delegate* unmanaged<byte*, int, byte*, byte*, int, nint>)Xml2("xmlReadMemory");
             fixed (byte* bytes = input)
+            fixed (byte* url = "faktura.xml\0"u8)
             {
-                doc = xmlReadMemory(bytes, input.Length, "faktura.xml", null, XmlParseNoNet);
+                doc = readMemory(bytes, input.Length, url, null, XmlParseNoNet);
             }
             if (doc == 0)
             {
@@ -64,13 +65,14 @@ internal static unsafe partial class LibXslt
         }
         finally
         {
+            var freeDoc = (delegate* unmanaged<nint, void>)Xml2("xmlFreeDoc");
             if (result != 0)
             {
-                xmlFreeDoc(result);
+                freeDoc(result);
             }
             if (doc != 0)
             {
-                xmlFreeDoc(doc);
+                freeDoc(doc);
             }
             xsltFreeStylesheet(style);
         }
@@ -81,10 +83,14 @@ internal static unsafe partial class LibXslt
     {
         if (pointer != null)
         {
-            var free = *(delegate* unmanaged<void*, void>*)NativeLibrary.GetExport(NativeLibrary.Load(Xml2), "xmlFree");
+            var free = *(delegate* unmanaged<void*, void>*)Xml2("xmlFree");
             free(pointer);
         }
     }
+
+    // libxml2 przez uchwyt libxslt: dlsym przeszukuje też jej zależności, więc dostajemy tę libxml2, z którą
+    // zbudowano libxslt — libxml2.so.2, a od libxml2 2.14 (np. Ubuntu 26.04) libxml2.so.16 — bez zgadywania nazwy.
+    private static nint Xml2(string name) => NativeLibrary.GetExport(NativeLibrary.Load(Xslt), name);
 
     [LibraryImport(Xslt, StringMarshalling = StringMarshalling.Utf8)]
     private static partial nint xsltParseStylesheetFile(string filename);
@@ -97,10 +103,4 @@ internal static unsafe partial class LibXslt
 
     [LibraryImport(Xslt)]
     private static partial void xsltFreeStylesheet(nint style);
-
-    [LibraryImport(Xml2, StringMarshalling = StringMarshalling.Utf8)]
-    private static partial nint xmlReadMemory(byte* buffer, int size, string url, string? encoding, int options);
-
-    [LibraryImport(Xml2)]
-    private static partial void xmlFreeDoc(nint doc);
 }

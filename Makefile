@@ -4,7 +4,7 @@ RID ?= linux-x64
 AOT_DIR := dist/aot
 PREFIX ?= $(HOME)/.local
 
-.PHONY: build test test-e2e aot test-aot install clean
+.PHONY: build test test-e2e aot test-aot release test-distros install clean
 
 build:
 	dotnet build ksef-app.slnx -c Release
@@ -26,6 +26,15 @@ aot:
 # Te same testy CLI (z E2E) na binarce AOT — po każdej zmianie typów JSON i po podbiciu biblioteki MF.
 test-aot: aot
 	KSEF_E2E=1 KSEF_BIN=$(CURDIR)/$(AOT_DIR)/ksef dotnet test --project tests/KsefCli.Tests -c Release
+
+# Wydanie dla architektury tej maszyny, budowane w kontenerze AlmaLinux 9 (glibc 2.34 — działa też na starszych
+# dystrybucjach): dist/release/ksef-<wersja>-linux-<arch>.tar.gz. Wymaga podmana albo dockera.
+release:
+	scripts/release-build.sh
+
+# Binarka w czystych kontenerach kilku dystrybucji (tabela do docs/INSTALL.md); domyślnie $(AOT_DIR)/ksef.
+test-distros:
+	scripts/test-distros.sh $(or $(BIN),$(AOT_DIR)/ksef)
 
 install: aot
 	install -Dm755 $(AOT_DIR)/ksef $(PREFIX)/bin/ksef
