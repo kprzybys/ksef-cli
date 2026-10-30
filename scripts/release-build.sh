@@ -10,6 +10,8 @@ cd "$(dirname "$0")/.."
 max_glibc=2.34
 
 version=${1:-$(git describe --tags --always --dirty)}
+# Tag v0.1.0 → wersja 0.1.0, tak samo jak w release.yml.
+version=${version#v}
 case $(uname -m) in
     x86_64) arch=x64 ;;
     aarch64) arch=arm64 ;;

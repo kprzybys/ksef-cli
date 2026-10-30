@@ -9,6 +9,7 @@ cd "$(dirname "$0")/.."
 host=$1
 shift
 version=$(git describe --tags --always --dirty)
+version=${version#v}
 sdk=$(dotnet --version 2>/dev/null || true)
 
 rsync -a --delete --exclude=bin/ --exclude=obj/ --exclude=dist/ --exclude=.git ./ "$host:ksef-build/"
