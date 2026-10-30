@@ -34,10 +34,10 @@ scripts/install-deps.sh --yes      # instaluje (sudo, gdy nie root)
 .NET SDK 10, którego nie ma w repozytorium dystrybucji (Ubuntu 22.04, Debian, openSUSE), skrypt instaluje
 oficjalnym `dotnet-install.sh` do `~/.dotnet` — bez sudo; trzeba dopisać `~/.dotnet` do `PATH`.
 
-## Klucz na karcie lub tokenie (PKCS#11) — wkrótce
+## Klucz na karcie lub tokenie (PKCS#11)
 
-Opcjonalnie, tylko dla logowania kluczem z karty, tokenu albo TPM (`ksef login --key pkcs11:…`, funkcja
-w przygotowaniu). Moduł karty ładuje p11-kit, a OpenSSL systemu — silnik (engine) albo provider PKCS#11;
+Opcjonalnie, tylko dla logowania kluczem z karty, tokenu albo TPM (`ksef login --key pkcs11:…`, zob. sekcję
+„Logowanie” w [README](../README.md#logowanie)). Moduł karty ładuje p11-kit, a OpenSSL systemu — silnik (engine) albo provider PKCS#11;
 zwykle nie trzeba nic konfigurować (opcjonalnie `PKCS11_PROVIDER_MODULE=/ścieżka/modułu.so`).
 
 ```bash
