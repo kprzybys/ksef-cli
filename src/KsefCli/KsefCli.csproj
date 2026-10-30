@@ -21,7 +21,20 @@
        z wiersza poleceń, bo ta trafiałaby też do bibliotek MF dla netstandard2.0 (NETSDK1207). -->
   <PropertyGroup Condition="'$(KsefAot)' == 'true'">
     <PublishAot>true</PublishAot>
+    <!-- W dist/aot tylko binarka: bez symboli natywnych (ksef.dbg, 26 MB — ślady stosu wyjątków .NET
+         ich nie potrzebują), .pdb i dokumentacji XML bibliotek. -->
+    <DebugType>none</DebugType>
+    <NativeDebugSymbols>false</NativeDebugSymbols>
+    <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>
+    <AllowedReferenceRelatedFileExtensions>-</AllowedReferenceRelatedFileExtensions>
   </PropertyGroup>
+
+  <!-- libSkiaSharp (kody QR w bibliotece MF) — ksef ich nie generuje, a binarka AOT tej biblioteki nie ładuje. -->
+  <Target Name="KsefAotDropSkiaSharp" AfterTargets="ComputeResolvedFilesToPublishList" Condition="'$(KsefAot)' == 'true'">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="$([System.String]::Copy('%(Filename)').StartsWith('libSkiaSharp'))" />
+    </ItemGroup>
+  </Target>
 
   <ItemGroup>
     <!-- XmlSerializer żądania logowania (AuthenticationTokenRequest) czyta model przez refleksję. -->

@@ -16,9 +16,12 @@ test:
 test-e2e:
 	KSEF_E2E=1 dotnet test --solution ksef-app.slnx -c Release
 
-# Jedna natywna binarka $(AOT_DIR)/ksef (bez .NET na maszynie docelowej).
+# Jedna natywna binarka $(AOT_DIR)/ksef (bez .NET na maszynie docelowej). Nowe ostrzeżenie kompilatora
+# AOT (spoza src/KsefCli/aot-warnings.txt) przerywa budowanie.
 aot:
-	dotnet publish src/KsefCli -c Release -r $(RID) -p:KsefAot=true -o $(AOT_DIR)
+	rm -rf $(AOT_DIR) && mkdir -p $(AOT_DIR)
+	dotnet publish src/KsefCli -c Release -r $(RID) -p:KsefAot=true -o $(AOT_DIR) "-flp:logfile=$(AOT_DIR).log;verbosity=normal"
+	scripts/check-aot-warnings.sh $(AOT_DIR).log src/KsefCli/aot-warnings.txt
 
 # Te same testy CLI (z E2E) na binarce AOT — po każdej zmianie typów JSON i po podbiciu biblioteki MF.
 test-aot: aot

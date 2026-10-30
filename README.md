@@ -38,10 +38,16 @@ z zewnątrz, bez forka:
   kontekstu. Brakujące typy wypisze tryb odkrywania:
   `KSEF_JSON_DISCOVER=/tmp/braki.txt KSEF_E2E=1 dotnet test --project tests/KsefCli.Tests`.
 - Podpis XAdES: algorytmy, które `SignedXml` tworzy po nazwie, rejestrujemy typem (`XmlDsigAlgorithms.cs`);
-  model żądania logowania dla `XmlSerializer` chroni przed trimmerem `ILLink.Descriptors.xml`.
+  model żądania logowania dla `XmlSerializer` chroni przed trimmerem `ILLink.Descriptors.xml`. Oba sprawdza
+  bez sieci `LoginOfflineTests` (logowanie przeciw fałszywemu KSeF, podpis weryfikowany po stronie serwera).
 - Podgląd HTML: libxslt przez P/Invoke (`src/Ksef.Fa3/LibXslt.cs`) zamiast `XslCompiledTransform`, który
   generuje kod w czasie działania (przy okazji `show` trwa 0,1 s zamiast 1,7 s).
 - Analizatory AOT działają przy każdym buildzie; refleksja w naszym kodzie to błąd kompilacji.
+- Ostrzeżenia kompilatora AOT o bibliotece MF są spisane w `src/KsefCli/aot-warnings.txt` (z opisem, co je
+  obsługuje). Nowe ostrzeżenie — np. po aktualizacji MF — przerywa `make aot`: trzeba je obsłużyć, przejść
+  `make test-aot` i dopiero wtedy dopisać do listy.
+- W `dist/aot/` jest tylko `ksef`: bez symboli natywnych (ślady stosu wyjątków działają bez nich) i bez
+  `libSkiaSharp` (kody QR biblioteki MF, nieużywane).
 
 Zagnieżdżonego submodułu biblioteki (`ksef-pdf-generator`, używany tylko przez jej aplikację testową)
 nie trzeba pobierać.
