@@ -220,8 +220,8 @@ public class CliOfflineTests : IDisposable
     public async Task CertNew_RefusesToPrintKeyOnTerminal()
     {
         // `script` daje procesowi pseudoterminal jako stdout.
-        string dll = Path.Combine(AppContext.BaseDirectory, "ksef.dll");
-        CliResult result = await RunInPseudoTerminalAsync($"dotnet {dll} cert new --nip 5908996669");
+        // Ksef.CommandLine: przy make test-aot sprawdza binarkę AOT, nie ksef.dll.
+        CliResult result = await RunInPseudoTerminalAsync($"{Ksef.CommandLine} cert new --nip 5908996669");
 
         Assert.Equal(1, result.ExitCode);
         Assert.Contains("nie wypiszę klucza prywatnego na terminal", result.Stdout);
@@ -407,6 +407,72 @@ public class CliOfflineTests : IDisposable
         Assert.Equal(1, result.ExitCode);
         Assert.Contains("ksef login", result.Stderr);
         Assert.True(Directory.Exists(Path.Combine(dir.Path, "nowy")));
+    }
+
+    // --- błędy środowiska: zawsze `ksef: …`, nigdy zrzut stosu ---
+
+    private static void AssertCleanError(CliResult result)
+    {
+        Assert.Equal(1, result.ExitCode);
+        Assert.StartsWith("ksef: ", result.Stderr);
+        Assert.DoesNotContain("Unhandled exception", result.Stderr);
+        Assert.DoesNotContain("   at ", result.Stderr);
+    }
+
+    [Fact]
+    public async Task CorruptedSessionFile_IsReportedWithPath()
+    {
+        Directory.CreateDirectory(Path.Combine(dir.Path, "ksef"));
+        string broken = Path.Combine(dir.Path, "ksef", "test-5908996669.json");
+        File.WriteAllText(broken, "{ niedokończony");
+
+        CliResult session = await Ksef.RunAsync(dir.Path, "session");
+        CliResult list = await Ksef.RunAsync(dir.Path, "list");
+
+        AssertCleanError(session);
+        Assert.Contains(broken, session.Stderr);
+        Assert.Contains("usuń go", session.Stderr);
+        AssertCleanError(list);
+    }
+
+    [Fact]
+    public async Task Get_DirectoryIsAFile_FailsCleanly()
+    {
+        string file = WriteFile("plik", [1]);
+
+        AssertCleanError(await Ksef.RunAsync(dir.Path, "get", "-d", file, KsefNumberA));
+    }
+
+    [Fact]
+    public async Task Upo_DirectoryIsAFile_FailsCleanly()
+    {
+        // Bez sesji błąd sesji wyprzedza katalog — tu ważne tylko, że nie ma zrzutu stosu.
+        string file = WriteFile("plik", [1]);
+
+        AssertCleanError(await Ksef.RunAsync(dir.Path, "upo", "-d", file, "--session", "20261030-SO-394363C000-F9191A9DA9-98", KsefNumberA));
+    }
+
+    [Fact]
+    public async Task CertNew_UnwritableOutput_FailsCleanly()
+    {
+        AssertCleanError(await Ksef.RunAsync(dir.Path, "cert", "new", "--nip", "5908996669", "-o", "/proc/ksef-test.pem"));
+        AssertCleanError(await Ksef.RunAsync(dir.Path, "cert", "new", "--nip", "5908996669", "-o", Path.Combine(dir.Path, "brak", "c.pem")));
+    }
+
+    [Fact]
+    public async Task Show_UnwritableOutput_FailsCleanly()
+    {
+        AssertCleanError(await Ksef.RunAsync(dir.Path, TestData.ValidInvoice(), "show", "-o", "/proc/ksef-test.html"));
+    }
+
+    [Fact]
+    public async Task Login_WithoutRuntimeDir_FailsBeforeContactingKsef()
+    {
+        // Pusty XDG_RUNTIME_DIR: błąd przed odczytem certyfikatu (garbage na stdin by go inaczej zgłosił) i przed siecią.
+        CliResult result = await Ksef.RunAsync("", "abc"u8.ToArray(), "login", "--nip", "5908996669", "--cert", "-");
+
+        AssertCleanError(result);
+        Assert.Contains("XDG_RUNTIME_DIR", result.Stderr);
     }
 
     [Fact]

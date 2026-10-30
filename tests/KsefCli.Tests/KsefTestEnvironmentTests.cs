@@ -138,7 +138,7 @@ public class KsefTestEnvironmentTests : IDisposable
         SessionStore.Save(expired);
         string refreshed = await SessionStore.GetAccessTokenAsync(expired, authorization, TestContext.Current.CancellationToken);
 
-        Assert.NotEqual(session.AccessToken.Token, refreshed);
+        // KSeF może zwrócić ten sam token, póki prawdziwy jest ważny — liczy się, że odświeżenie przeszło i się zapisało.
         KsefSession saved = SessionStore.Resolve("test", nip);
         Assert.Equal(refreshed, saved.AccessToken.Token);
         Assert.True(saved.AccessToken.ValidUntil > DateTimeOffset.UtcNow.AddMinutes(1));
@@ -211,7 +211,8 @@ public class KsefTestEnvironmentTests : IDisposable
         CliResult result = await Ksef("list");
 
         Assert.True(result.ExitCode == 0, result.Stderr);
-        Assert.NotEqual(session.AccessToken.Token, SessionStore.Resolve("test", nip).AccessToken.Token);
+        // Odświeżony (KSeF może oddać ten sam token, póki prawdziwy jest ważny) i zapisany z nowym terminem.
+        Assert.True(SessionStore.Resolve("test", nip).AccessToken.ValidUntil > DateTimeOffset.UtcNow.AddMinutes(1));
     }
 
     private string WriteInvoice(string name, byte[] xml)
@@ -420,5 +421,18 @@ public class KsefTestEnvironmentTests : IDisposable
 
         Assert.True(got.ExitCode == 0, got.Stderr);
         Assert.Equal(invoice, got.StdoutBytes);
+    }
+
+    [Fact]
+    public async Task List_ManyWindows_RespectsKsefRateLimit()
+    {
+        // Kilka lat = kilkanaście okien po 90 dni szybko po sobie: bez czekania na Retry-After KSeF odrzuca
+        // serię (429, „8 żądań na sekundę”). Losowy NIP: limit godzinowy (20 zapytań) liczy się per kontekst.
+        await LoginAsync(TestData.RandomNip());
+        string from = DateTime.Today.AddYears(-4).ToString("yyyy-MM-dd");
+
+        CliResult result = await Ksef("list", "--from", from);
+
+        Assert.True(result.ExitCode == 0, result.Stderr);
     }
 }

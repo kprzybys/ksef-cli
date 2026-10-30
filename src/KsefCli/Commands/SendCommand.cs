@@ -29,7 +29,7 @@ public static class SendCommand
     // internal: typ wyniku --json musi być widoczny dla CliJsonContext.
     internal sealed record SendResult(
         int Index, string File, string SessionReferenceNumber, string? InvoiceReferenceNumber, string? KsefNumber,
-        int? Code, string? Description, IReadOnlyCollection<string>? Details, IDictionary<string, string>? Extensions)
+        int? Code, int? HttpStatus, string? Description, IReadOnlyCollection<string>? Details, IDictionary<string, string>? Extensions)
     {
         [System.Text.Json.Serialization.JsonIgnore]
         public int Index { get; init; } = Index;
@@ -80,7 +80,8 @@ public static class SendCommand
             }
             foreach (Fa3ValidationError error in Fa3Validator.Validate(xml))
             {
-                Console.Error.WriteLine($"{name}:{error.Line}:{error.Column}: {error.Source} błąd: {error.Message}");
+                string severity = error.Severity == System.Xml.Schema.XmlSeverityType.Error ? "błąd" : "ostrzeżenie";
+                Console.Error.WriteLine($"{name}:{error.Line}:{error.Column}: {error.Source} {severity}: {error.Message}");
                 invalid = true;
             }
             invoices.Add((name, xml));
@@ -123,9 +124,10 @@ public static class SendCommand
                 }
                 continue;
             }
+            string code = result.Code is { } c ? $"KSeF {c} " : result.HttpStatus is { } h ? $"HTTP {h} " : "";
             string details = result.Details is { Count: > 0 } d ? $" ({string.Join("; ", d)})" : "";
             string extensions = result.Extensions is { Count: > 0 } e ? $" [{string.Join(", ", e.Select(kv => $"{kv.Key}={kv.Value}"))}]" : "";
-            CliIo.Error($"{result.File}: KSeF {result.Code} {result.Description}{details}{extensions}");
+            CliIo.Error($"{result.File}: {code}{result.Description}{details}{extensions}");
         }
         return results.All(r => r.Accepted) ? 0 : 1;
     }
@@ -148,49 +150,71 @@ public static class SendCommand
         OpenOnlineSessionResponse online = await ksef.OpenOnlineSessionAsync(open, await tokens.GetAsync(cancellationToken), cancellationToken: cancellationToken);
         string sessionReference = online.ReferenceNumber;
 
+        // Błąd przy jednej fakturze (KSeF, sieć, limit czasu) dotyczy tylko jej: numery KSeF już przyjętych
+        // faktur muszą trafić na wyjście, bo ponowna wysyłka skończy się duplikatem (440).
         List<SendResult> results = [];
-        try
+        List<(int Index, string Name, string Reference)> sent = [];
+        for (int index = 0; index < invoices.Count; index++)
         {
-            List<(int Index, string Name, string Reference)> sent = [];
-            for (int index = 0; index < invoices.Count; index++)
+            (string name, byte[] xml) = invoices[index];
+            byte[] encrypted = crypto.EncryptBytesWithAES256(xml, encryption.CipherKey, encryption.CipherIv);
+            FileMetadata plain = crypto.GetMetaData(xml);
+            FileMetadata cipher = crypto.GetMetaData(encrypted);
+            SendInvoiceRequest request = SendInvoiceOnlineSessionRequestBuilder.Create()
+                .WithInvoiceHash(plain.HashSHA, plain.FileSize)
+                .WithEncryptedDocumentHash(cipher.HashSHA, cipher.FileSize)
+                .WithEncryptedDocumentContent(Convert.ToBase64String(encrypted))
+                .Build();
+            try
             {
-                (string name, byte[] xml) = invoices[index];
-                byte[] encrypted = crypto.EncryptBytesWithAES256(xml, encryption.CipherKey, encryption.CipherIv);
-                FileMetadata plain = crypto.GetMetaData(xml);
-                FileMetadata cipher = crypto.GetMetaData(encrypted);
-                SendInvoiceRequest request = SendInvoiceOnlineSessionRequestBuilder.Create()
-                    .WithInvoiceHash(plain.HashSHA, plain.FileSize)
-                    .WithEncryptedDocumentHash(cipher.HashSHA, cipher.FileSize)
-                    .WithEncryptedDocumentContent(Convert.ToBase64String(encrypted))
-                    .Build();
-                try
-                {
-                    SendInvoiceResponse response = await ksef.SendOnlineSessionInvoiceAsync(request, sessionReference, await tokens.GetAsync(cancellationToken), cancellationToken);
-                    sent.Add((index, name, response.ReferenceNumber));
-                }
-                catch (KsefApiException ex)
-                {
-                    results.Add(new SendResult(index, name, sessionReference, null, null, (int)ex.StatusCode, ex.Message, null, null));
-                }
+                SendInvoiceResponse response = await KsefRetry.OnRateLimitAsync(async () =>
+                    await ksef.SendOnlineSessionInvoiceAsync(request, sessionReference, await tokens.GetAsync(cancellationToken), cancellationToken), cancellationToken);
+                sent.Add((index, name, response.ReferenceNumber));
             }
+            catch (Exception ex) when (CliErrors.Describe(ex) is { } message)
+            {
+                results.Add(Failed(index, name, sessionReference, null, ex, message));
+            }
+        }
 
-            foreach ((int index, string name, string reference) in sent)
+        foreach ((int index, string name, string reference) in sent)
+        {
+            try
             {
                 SessionInvoice status = await WaitForStatusAsync(ksef, tokens, sessionReference, reference, cancellationToken);
                 results.Add(new SendResult(
                     index, name, sessionReference, reference,
                     status.Status.Code == Accepted ? status.KsefNumber : null,
-                    status.Status.Code, status.Status.Description, [.. status.Status.Details ?? []], status.Status.Extensions));
+                    status.Status.Code, null, status.Status.Description, [.. status.Status.Details ?? []], status.Status.Extensions));
+            }
+            catch (Exception ex) when (CliErrors.Describe(ex) is { } message)
+            {
+                // Faktura wysłana, ale statusu nie znamy — numer referencyjny pozwala sprawdzić ją później.
+                results.Add(Failed(index, name, sessionReference, reference, ex, $"brak statusu faktury {reference}: {message}"));
             }
         }
-        finally
+
+        try
         {
             // Zamknięcie sesji uruchamia generowanie UPO.
             await ksef.CloseOnlineSessionAsync(sessionReference, await tokens.GetAsync(CancellationToken.None), CancellationToken.None);
         }
+        catch (Exception ex) when (CliErrors.Describe(ex) is { } message)
+        {
+            // KSeF zamyka nieużywaną sesję sam; wyniki faktur są ważne niezależnie od tego.
+            CliIo.Error($"sesja {sessionReference}: nie udało się jej zamknąć ({message}) — UPO pojawi się po jej wygaśnięciu.");
+        }
 
         // Kolejność wyników jak kolejność plików na wejściu.
         return [.. results.OrderBy(r => r.Index)];
+    }
+
+    /// <summary>Wynik dla faktury, której nie przyjęto przez błąd żądania: kod KSeF z treści błędu, osobno status HTTP.</summary>
+    private static SendResult Failed(int index, string name, string sessionReference, string? invoiceReference, Exception ex, string message)
+    {
+        KsefApiException? api = ex as KsefApiException;
+        int? code = api?.ErrorResponse?.Exception?.ExceptionDetailList?.FirstOrDefault()?.ExceptionCode;
+        return new SendResult(index, name, sessionReference, invoiceReference, null, code, api is null ? null : (int)api.StatusCode, message, null, null);
     }
 
     private static async Task<SessionInvoice> WaitForStatusAsync(
@@ -199,7 +223,8 @@ public static class SendCommand
         DateTime deadline = DateTime.UtcNow + PollTimeout;
         while (true)
         {
-            SessionInvoice status = await ksef.GetSessionInvoiceAsync(sessionReference, invoiceReference, await tokens.GetAsync(cancellationToken), cancellationToken);
+            SessionInvoice status = await KsefRetry.OnRateLimitAsync(async () =>
+                await ksef.GetSessionInvoiceAsync(sessionReference, invoiceReference, await tokens.GetAsync(cancellationToken), cancellationToken), cancellationToken);
             if (!InProgress.Contains(status.Status.Code) || DateTime.UtcNow >= deadline)
             {
                 return status;

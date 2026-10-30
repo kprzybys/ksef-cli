@@ -84,6 +84,11 @@ ksef list | ksef get -d otrzymane/                      # pobiera tylko nowe fak
 ksef send faktury/*.xml | tee wyslane.tsv | ksef upo -d upo/   # wysyłka + UPO każdej faktury
 ```
 
+Limity KSeF: 429 z krótkim czasem (np. „8 żądań na sekundę”) komendy przeczekują same (do 3 ponowień,
+czas z `Retry-After`); długi limit (np. „20 zapytań o metadane na godzinę”) kończy komendę od razu komunikatem
+KSeF z czasem do ponowienia. Każde 90 dni zakresu `ksef list` to co najmniej jedno zapytanie — długich zakresów
+nie warto odpytywać często. Przekroczenie czasu odpowiedzi HTTP (5 min) kończy komendę komunikatem i kodem 1.
+
 Wyszukiwanie metadanych w KSeF jest ostatecznie spójne: faktura przyjęta przed chwilą bywa widoczna
 w `ksef list` dopiero po kilku sekundach.
 

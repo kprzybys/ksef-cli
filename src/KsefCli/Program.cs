@@ -24,4 +24,18 @@ root.Subcommands.Add(SendCommand.Create(envOption));
 root.Subcommands.Add(GetCommand.Create(envOption));
 root.Subcommands.Add(UpoCommand.Create(envOption));
 
-return await root.Parse(args).InvokeAsync();
+// Własna obsługa błędów zamiast domyślnej: zrzut stosu tylko dla błędów programu (CliErrors).
+InvocationConfiguration invocation = new() { EnableDefaultExceptionHandler = false };
+try
+{
+    return await root.Parse(args).InvokeAsync(invocation);
+}
+catch (Exception ex) when (CliErrors.Describe(ex) is { } message)
+{
+    CliIo.Error(message);
+    return 1;
+}
+catch (Exception ex) when (CliErrors.IsInterrupt(ex))
+{
+    return 130;
+}

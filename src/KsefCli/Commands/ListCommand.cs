@@ -66,7 +66,7 @@ public static class ListCommand
             DateTimeOffset from, to;
             try
             {
-                from = parseResult.GetValue(fromOption) is { } f ? ParseDate(f, endOfDay: false) : new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, now.Offset);
+                from = parseResult.GetValue(fromOption) is { } f ? ParseDate(f, endOfDay: false) : ParseDate($"{now:yyyy-MM}-01", endOfDay: false);
                 to = parseResult.GetValue(toOption) is { } t ? ParseDate(t, endOfDay: true) : now;
             }
             catch (FormatException ex)
@@ -90,6 +90,12 @@ public static class ListCommand
         return command;
     }
 
+    private static readonly string[] IsoFormats =
+    [
+        "yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd'T'HH:mm:ss.FFFFFFF",
+        "yyyy-MM-dd'T'HH:mmK", "yyyy-MM-dd'T'HH:mm:ssK", "yyyy-MM-dd'T'HH:mm:ss.FFFFFFFK",
+    ];
+
     /// <summary>Sama data to dzień w czasie lokalnym: początek dla „od”, koniec dla „do” (zakres włącznie).</summary>
     public static DateTimeOffset ParseDate(string value, bool endOfDay)
     {
@@ -98,7 +104,8 @@ public static class ListCommand
             DateTime local = endOfDay ? day.ToDateTime(TimeOnly.MaxValue) : day.ToDateTime(TimeOnly.MinValue);
             return new DateTimeOffset(local, TimeZoneInfo.Local.GetUtcOffset(local));
         }
-        if (DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out DateTimeOffset moment))
+        // Tylko ISO 8601 — luźne parsowanie kultury niezmiennej wzięłoby 01/10/2026 za 10 stycznia.
+        if (DateTimeOffset.TryParseExact(value, IsoFormats, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out DateTimeOffset moment))
         {
             return moment;
         }
@@ -124,7 +131,8 @@ public static class ListCommand
             // Token pobierany przy każdej stronie: długie zapytanie może przekroczyć ważność access tokenu.
             AccessTokenProvider tokens = new(session, authorization);
             InvoiceQueryResult result = await InvoiceQuery.QueryAllAsync(filters, async (f, offset, size, ct) =>
-                await ksef.QueryInvoiceMetadataAsync(f, await tokens.GetAsync(ct), offset, size, SortOrder.Asc, ct),
+                await KsefRetry.OnRateLimitAsync(async () =>
+                    await ksef.QueryInvoiceMetadataAsync(f, await tokens.GetAsync(ct), offset, size, SortOrder.Asc, ct), ct),
                 cancellationToken);
 
             if (json)
@@ -149,7 +157,7 @@ public static class ListCommand
 
     public static string ToTsv(InvoiceSummary invoice) => string.Join('\t',
         invoice.KsefNumber,
-        invoice.InvoiceNumber,
+        Field(invoice.InvoiceNumber),
         invoice.IssueDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
         invoice.Seller?.Nip,
         Field(invoice.Seller?.Name),
@@ -158,6 +166,6 @@ public static class ListCommand
         invoice.GrossAmount.ToString("0.00", CultureInfo.InvariantCulture),
         invoice.Currency);
 
-    // TSV nie ma cytowania: tabulator i koniec wiersza w nazwie zamieniamy na spację.
+    // TSV nie ma cytowania: tabulator i koniec wiersza w tekście wystawcy (nazwy, numer faktury) zamieniamy na spację.
     private static string? Field(string? value) => value?.ReplaceLineEndings(" ").Replace('\t', ' ');
 }

@@ -266,3 +266,81 @@ public class GetRetryTests
     public void ErrorWithoutBody_IsNotRetried() =>
         Assert.False(GetCommand.IsNotYetAvailable(new KSeF.Client.Core.Exceptions.KsefApiException("błąd", System.Net.HttpStatusCode.InternalServerError)));
 }
+
+public class KsefRetryTests
+{
+    private static KSeF.Client.Core.Exceptions.KsefRateLimitException RateLimit(int seconds) =>
+        KSeF.Client.Core.Exceptions.KsefRateLimitException.FromRetryAfterHeader("429", seconds.ToString());
+
+    [Fact]
+    public async Task RateLimit_WaitsRecommendedDelayAndRetries()
+    {
+        List<TimeSpan> waits = [];
+        int calls = 0;
+
+        int result = await KsefRetry.OnRateLimitAsync(
+            () => ++calls < 3 ? throw RateLimit(2) : Task.FromResult(42),
+            CancellationToken.None,
+            (delay, _) => { waits.Add(delay); return Task.CompletedTask; });
+
+        Assert.Equal(42, result);
+        Assert.Equal([TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2)], waits);
+    }
+
+    [Fact]
+    public async Task RateLimit_GivesUpBeforeCircuitBreakerOpens()
+    {
+        int calls = 0;
+
+        await Assert.ThrowsAsync<KSeF.Client.Core.Exceptions.KsefRateLimitException>(() => KsefRetry.OnRateLimitAsync<int>(
+            () => { calls++; throw RateLimit(1); },
+            CancellationToken.None,
+            (_, _) => Task.CompletedTask));
+
+        Assert.Equal(KsefRetry.MaxAttempts, calls);
+        Assert.True(KsefRetry.MaxAttempts < 5); // bezpiecznik MF otwiera się po 5 kolejnych błędach
+    }
+
+    [Fact]
+    public async Task OtherErrors_AreNotRetried()
+    {
+        int calls = 0;
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => KsefRetry.OnRateLimitAsync<int>(
+            () => { calls++; throw new HttpRequestException("brak sieci"); },
+            CancellationToken.None,
+            (_, _) => Task.CompletedTask));
+
+        Assert.Equal(1, calls);
+    }
+
+    [Fact]
+    public async Task ZeroDelay_WaitsAtLeastASecond()
+    {
+        List<TimeSpan> waits = [];
+        int calls = 0;
+
+        await KsefRetry.OnRateLimitAsync(
+            () => ++calls == 1 ? throw RateLimit(0) : Task.FromResult(0),
+            CancellationToken.None,
+            (delay, _) => { waits.Add(delay); return Task.CompletedTask; });
+
+        Assert.Equal([TimeSpan.FromSeconds(1)], waits);
+    }
+
+    [Fact]
+    public async Task LongLimit_FailsImmediatelyWithKsefMessage()
+    {
+        // „20 żądań na godzinę … spróbuj po 55 minutach” — czekanie nic nie da, użytkownik ma od razu wiedzieć.
+        int calls = 0;
+        bool waited = false;
+
+        await Assert.ThrowsAsync<KSeF.Client.Core.Exceptions.KsefRateLimitException>(() => KsefRetry.OnRateLimitAsync<int>(
+            () => { calls++; throw RateLimit(3334); },
+            CancellationToken.None,
+            (_, _) => { waited = true; return Task.CompletedTask; }));
+
+        Assert.Equal(1, calls);
+        Assert.False(waited);
+    }
+}

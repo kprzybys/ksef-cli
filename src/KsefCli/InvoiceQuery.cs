@@ -15,12 +15,16 @@ public static class InvoiceQuery
 {
     public const int PageSize = 250;
 
+    /// <summary>Najwięcej pozycji, jakie KSeF zwraca na jedno zapytanie (dalej <see cref="PagedInvoiceResponse.IsTruncated"/>).</summary>
+    public const int MaxResultsPerQuery = 10_000;
+
     // Z zapasem względem limitu 100 dni KSeF (granice okien i przesunięcia stref czasowych).
     public static readonly TimeSpan MaxWindow = TimeSpan.FromDays(90);
 
     public delegate Task<PagedInvoiceResponse> PageFetcher(InvoiceQueryFilters filters, int pageOffset, int pageSize, CancellationToken cancellationToken);
 
-    public static async Task<InvoiceQueryResult> QueryAllAsync(InvoiceQueryFilters filters, PageFetcher fetchPage, CancellationToken cancellationToken)
+    public static async Task<InvoiceQueryResult> QueryAllAsync(
+        InvoiceQueryFilters filters, PageFetcher fetchPage, CancellationToken cancellationToken, int maxResultsPerQuery = MaxResultsPerQuery)
     {
         List<InvoiceSummary> invoices = [];
         HashSet<string> seen = [];
@@ -31,7 +35,7 @@ public static class InvoiceQuery
         {
             DateTimeOffset windowEnd = windowStart + MaxWindow < end ? windowStart + MaxWindow : end;
             InvoiceQueryFilters window = Clone(filters, windowStart, windowEnd);
-            hwm = await QueryWindowAsync(window, fetchPage, invoices, seen, cancellationToken) ?? hwm;
+            hwm = await QueryWindowAsync(window, fetchPage, invoices, seen, maxResultsPerQuery, cancellationToken) ?? hwm;
             if (windowEnd == end)
             {
                 break;
@@ -40,39 +44,51 @@ public static class InvoiceQuery
         return new InvoiceQueryResult(invoices, hwm);
     }
 
-    /// <summary>Jedno okno (≤ <see cref="MaxWindow"/>) przez wszystkie strony i obcięcia do 10 000.</summary>
+    /// <summary>
+    /// Jedno okno (≤ <see cref="MaxWindow"/>) przez wszystkie strony. Obcięcie do <see cref="MaxResultsPerQuery"/>:
+    /// stronicujemy do wyczerpania limitu, dopiero potem zaczynamy od daty ostatniej pozycji (`pageOffset` od zera) —
+    /// tak opisuje to OpenAPI KSeF („hasMore i isTruncated → zawęź dateRange od daty ostatniego rekordu”).
+    /// Niezależnie od tego, czy KSeF ustawia isTruncated na każdej stronie obciętego zbioru, czy tylko na ostatniej.
+    /// </summary>
     private static async Task<DateTimeOffset?> QueryWindowAsync(
-        InvoiceQueryFilters filters, PageFetcher fetchPage, List<InvoiceSummary> invoices, HashSet<string> seen, CancellationToken cancellationToken)
+        InvoiceQueryFilters filters, PageFetcher fetchPage, List<InvoiceSummary> invoices, HashSet<string> seen,
+        int maxResultsPerQuery, CancellationToken cancellationToken)
     {
         DateTimeOffset? hwm = null;
         while (true)
         {
             PagedInvoiceResponse page;
+            InvoiceSummary? last = null;
             int pageOffset = 0;
+            int fetched = 0;
+            bool limitReached;
             do
             {
                 page = await fetchPage(filters, pageOffset++, PageSize, cancellationToken);
                 hwm = page.PermanentStorageHwmDate ?? hwm;
                 foreach (InvoiceSummary invoice in page.Invoices ?? [])
                 {
+                    last = invoice;
+                    fetched++;
                     if (seen.Add(invoice.KsefNumber))
                     {
                         invoices.Add(invoice);
                     }
                 }
+                limitReached = page.IsTruncated && fetched >= maxResultsPerQuery;
             }
-            while (page.HasMore && !page.IsTruncated);
+            while (page.HasMore && !limitReached);
 
-            if (!page.IsTruncated)
+            if (!page.HasMore || last is null)
             {
                 return hwm;
             }
 
-            DateTimeOffset next = DateOf(invoices[^1], filters.DateRange.DateType);
+            DateTimeOffset next = DateOf(last, filters.DateRange.DateType);
             if (next <= filters.DateRange.From)
             {
-                // Ponad 10 000 faktur z tą samą datą — dalej się nie przesuniemy.
-                throw new InvalidOperationException($"Ponad 10 000 faktur z datą {next:O}; zawęź zapytanie (np. --subject albo krótszy zakres).");
+                // Ponad limit faktur z tą samą datą — dalej się nie przesuniemy.
+                throw new InvalidOperationException($"Ponad {maxResultsPerQuery:N0} faktur z datą {next:O}; zawęź zapytanie (np. --subject albo inny --date-type).");
             }
             filters.DateRange.From = next;
         }

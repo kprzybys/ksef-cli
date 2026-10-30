@@ -14,7 +14,7 @@ namespace KsefCli.Commands;
 /// (numer KSeF, plik, numer sesji), więc `ksef send *.xml | ksef upo -d upo/` działa wprost.
 /// UPO powstaje po zamknięciu sesji asynchronicznie — czekamy, aż sesja będzie przetworzona.
 /// </summary>
-public static class UpoCommand
+public static partial class UpoCommand
 {
     // Kod statusu sesji: 200 — sesja przetworzona, UPO wygenerowane; 100 otwarta, 170 zamknięta (UPO w drodze).
     private const int SessionProcessed = 200;
@@ -177,18 +177,30 @@ public static class UpoCommand
                     List<(string Name, string Xml)> documents = [];
                     if (request.KsefNumber is { } number)
                     {
-                        documents.Add(($"{number}.upo.xml", await ksef.GetSessionInvoiceUpoByKsefNumberAsync(
-                            request.SessionReferenceNumber, number, await tokens.GetAsync(cancellationToken), cancellationToken)));
+                        documents.Add(($"{number}.upo.xml", await KsefRetry.OnRateLimitAsync(async () => await ksef.GetSessionInvoiceUpoByKsefNumberAsync(
+                            request.SessionReferenceNumber, number, await tokens.GetAsync(cancellationToken), cancellationToken), cancellationToken)));
                     }
                     else
                     {
                         // Zbiorcze UPO dużej sesji bywa podzielone na strony.
                         List<UpoPageResponse> pages = [.. status.Upo?.Pages ?? []];
+                        if (pages.Count == 0)
+                        {
+                            CliIo.Error($"{label}: sesja przetworzona, ale KSeF nie wystawił dla niej UPO (np. wszystkie faktury odrzucone).");
+                            failed = true;
+                            continue;
+                        }
+                        if (pages.FirstOrDefault(p => !SafeName().IsMatch(p.ReferenceNumber ?? "")) is { } odd)
+                        {
+                            CliIo.Error($"{label}: nieoczekiwany numer strony UPO: {odd.ReferenceNumber}");
+                            failed = true;
+                            continue;
+                        }
                         foreach (UpoPageResponse page in pages)
                         {
                             string name = pages.Count == 1 ? $"{request.SessionReferenceNumber}.upo.xml" : $"{request.SessionReferenceNumber}-{page.ReferenceNumber}.upo.xml";
-                            documents.Add((name, await ksef.GetSessionUpoAsync(
-                                request.SessionReferenceNumber, page.ReferenceNumber, await tokens.GetAsync(cancellationToken), cancellationToken)));
+                            documents.Add((name, await KsefRetry.OnRateLimitAsync(async () => await ksef.GetSessionUpoAsync(
+                                request.SessionReferenceNumber, page.ReferenceNumber, await tokens.GetAsync(cancellationToken), cancellationToken), cancellationToken)));
                         }
                         if (dir is null && documents.Count > 1)
                         {
@@ -237,7 +249,8 @@ public static class UpoCommand
             SessionStatusResponse status;
             try
             {
-                status = await ksef.GetSessionStatusAsync(sessionReference, await tokens.GetAsync(cancellationToken), cancellationToken);
+                status = await KsefRetry.OnRateLimitAsync(async () =>
+                    await ksef.GetSessionStatusAsync(sessionReference, await tokens.GetAsync(cancellationToken), cancellationToken), cancellationToken);
             }
             catch (KsefApiException ex)
             {
@@ -261,4 +274,8 @@ public static class UpoCommand
             await Task.Delay(PollInterval, cancellationToken);
         }
     }
+
+    // Numer strony UPO z odpowiedzi KSeF trafia do nazwy pliku — tylko bezpieczne znaki.
+    [System.Text.RegularExpressions.GeneratedRegex("^[0-9A-Za-z-]{1,100}$")]
+    private static partial System.Text.RegularExpressions.Regex SafeName();
 }

@@ -78,12 +78,12 @@ public class InvoiceQueryTests
     [Fact]
     public async Task Truncated_ContinuesFromLastDateAndSkipsDuplicates()
     {
-        // Pierwsze zapytanie obcięte po fakturach 1–3; drugie (od daty faktury 3) zwraca 3 ponownie oraz 4–5.
+        // Limit 3 na zapytanie: pierwsze obcięte po fakturach 1–3; drugie (od daty faktury 3) zwraca 3 ponownie oraz 4–5.
         Recorder api = new((filters, offset) => filters.DateRange.From == Start
             ? offset == 0 ? Page([Invoice(1), Invoice(2)], hasMore: true) : Page([Invoice(3)], hasMore: true, truncated: true)
             : Page([Invoice(3), Invoice(4), Invoice(5)]));
 
-        InvoiceQueryResult result = await InvoiceQuery.QueryAllAsync(Filters(Start, Start.AddDays(5)), api.FetchAsync, CancellationToken.None);
+        InvoiceQueryResult result = await InvoiceQuery.QueryAllAsync(Filters(Start, Start.AddDays(5)), api.FetchAsync, CancellationToken.None, maxResultsPerQuery: 3);
 
         Assert.Equal(["KSEF-00001", "KSEF-00002", "KSEF-00003", "KSEF-00004", "KSEF-00005"], result.Invoices.Select(i => i.KsefNumber));
         Assert.Equal(Invoice(3).IssueDate, api.Calls[2].From);
@@ -96,9 +96,9 @@ public class InvoiceQueryTests
     [InlineData(DateType.PermanentStorage)]
     public async Task Truncated_ContinuesFromTheQueriedDateType(DateType dateType)
     {
-        Recorder api = new((filters, _) => filters.DateRange.From == Start ? Page([Invoice(1), Invoice(2)], truncated: true) : Page([]));
+        Recorder api = new((filters, _) => filters.DateRange.From == Start ? Page([Invoice(1), Invoice(2)], hasMore: true, truncated: true) : Page([]));
 
-        await InvoiceQuery.QueryAllAsync(Filters(Start, Start.AddDays(30), dateType), api.FetchAsync, CancellationToken.None);
+        await InvoiceQuery.QueryAllAsync(Filters(Start, Start.AddDays(30), dateType), api.FetchAsync, CancellationToken.None, maxResultsPerQuery: 2);
 
         Assert.Equal(InvoiceQuery.DateOf(Invoice(2), dateType), api.Calls[1].From);
     }
@@ -106,14 +106,57 @@ public class InvoiceQueryTests
     [Fact]
     public async Task Truncated_WithoutProgress_FailsInsteadOfLooping()
     {
-        // 10 000 faktur z tą samą datą co początek zakresu: przesunięcie nic nie da.
-        Recorder api = new((_, _) => Page([Invoice(1, Start), Invoice(2, Start)], truncated: true));
+        // Cały limit zapytania to faktury z datą początku zakresu: przesunięcie nic nie da.
+        Recorder api = new((_, _) => Page([Invoice(1, Start), Invoice(2, Start)], hasMore: true, truncated: true));
 
         InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => InvoiceQuery.QueryAllAsync(Filters(Start, Start.AddDays(5)), api.FetchAsync, CancellationToken.None));
+            () => InvoiceQuery.QueryAllAsync(Filters(Start, Start.AddDays(5)), api.FetchAsync, CancellationToken.None, maxResultsPerQuery: 2));
 
-        Assert.Contains("10 000", ex.Message);
+        Assert.Contains("Ponad 2 faktur", ex.Message);
         Assert.Single(api.Calls);
+    }
+
+    [Fact]
+    public async Task Truncated_KeepsPagingUpToTheLimitBeforeMovingOn()
+    {
+        // KSeF może oznaczać isTruncated na każdej stronie obciętego zbioru: wtedy i tak stronicujemy do limitu,
+        // inaczej dzień z ponad jedną stroną faktur dawałby fałszywy błąd braku postępu.
+        DateTimeOffset day = Start.AddDays(1);
+        Recorder api = new((filters, offset) => filters.DateRange.From == Start
+            ? Page([Invoice(2 * offset + 1, day), Invoice(2 * offset + 2, day)], hasMore: true, truncated: true)
+            : Page([Invoice(5, day), Invoice(6, day.AddHours(1))]));
+
+        InvoiceQueryResult result = await InvoiceQuery.QueryAllAsync(Filters(Start, Start.AddDays(5)), api.FetchAsync, CancellationToken.None, maxResultsPerQuery: 4);
+
+        Assert.Equal([0, 1, 0], api.Calls.Select(c => c.Offset));
+        Assert.Equal(day, api.Calls[2].From);
+        Assert.Equal(6, result.Invoices.Count);
+    }
+
+    [Fact]
+    public async Task Truncated_ContinuesFromLastInvoiceOfThePage_EvenWhenAllAreDuplicates()
+    {
+        // Drugie zapytanie zwraca same powtórki z późniejszą datą — przesunięcie liczy się od ostatniej pozycji strony.
+        DateTimeOffset later = Start.AddDays(2);
+        Recorder api = new((filters, _) =>
+            filters.DateRange.From == Start ? Page([Invoice(1, Start.AddDays(1)), Invoice(2, later)], hasMore: true, truncated: true)
+            : filters.DateRange.From == later ? Page([Invoice(2, later), Invoice(2, later.AddDays(1))], hasMore: true, truncated: true)
+            : Page([]));
+
+        await InvoiceQuery.QueryAllAsync(Filters(Start, Start.AddDays(5)), api.FetchAsync, CancellationToken.None, maxResultsPerQuery: 2);
+
+        Assert.Equal([Start, later, later.AddDays(1)], api.Calls.Select(c => c.From));
+    }
+
+    [Fact]
+    public async Task TruncatedWithoutMore_IsComplete()
+    {
+        Recorder api = new((_, _) => Page([Invoice(1), Invoice(2)], truncated: true));
+
+        InvoiceQueryResult result = await InvoiceQuery.QueryAllAsync(Filters(Start, Start.AddDays(5)), api.FetchAsync, CancellationToken.None, maxResultsPerQuery: 2);
+
+        Assert.Single(api.Calls);
+        Assert.Equal(2, result.Invoices.Count);
     }
 
     [Fact]
@@ -164,9 +207,9 @@ public class InvoiceQueryTests
     public async Task UserFilters_ArePassedOnAndNotMutated()
     {
         InvoiceQueryFilters filters = Filters(Start, Start.AddDays(200));
-        Recorder api = new((f, _) => f.DateRange.From == Start ? Page([Invoice(1), Invoice(2)], truncated: true) : Page([]));
+        Recorder api = new((f, _) => f.DateRange.From == Start ? Page([Invoice(1), Invoice(2)], hasMore: true, truncated: true) : Page([]));
 
-        await InvoiceQuery.QueryAllAsync(filters, api.FetchAsync, CancellationToken.None);
+        await InvoiceQuery.QueryAllAsync(filters, api.FetchAsync, CancellationToken.None, maxResultsPerQuery: 2);
 
         Assert.All(api.Calls, c =>
         {
@@ -202,10 +245,22 @@ public class ListFormatTests
         Assert.Equal(new DateTimeOffset(2026, 10, 1, 12, 30, 0, TimeSpan.FromHours(2)), value);
     }
 
+    [Fact]
+    public void ParseDate_AcceptsIsoWithoutOffsetAsLocal()
+    {
+        DateTimeOffset value = KsefCli.Commands.ListCommand.ParseDate("2026-10-01T12:30", endOfDay: false);
+
+        Assert.Equal(new DateTime(2026, 10, 1, 12, 30, 0), value.DateTime);
+        Assert.Equal(TimeZoneInfo.Local.GetUtcOffset(new DateTime(2026, 10, 1, 12, 30, 0)), value.Offset);
+    }
+
     [Theory]
     [InlineData("wczoraj")]
     [InlineData("2026-13-01")]
     [InlineData("01.10.2026x")]
+    [InlineData("10/01/2026")] // format amerykański: nie zgadujemy, czy to 1 października, czy 10 stycznia
+    [InlineData("01/10/2026")]
+    [InlineData("1 Oct 2026")]
     public void ParseDate_RejectsGarbage(string value) =>
         Assert.Throws<FormatException>(() => KsefCli.Commands.ListCommand.ParseDate(value, endOfDay: false));
 
@@ -215,7 +270,7 @@ public class ListFormatTests
         InvoiceSummary invoice = new()
         {
             KsefNumber = "5908996669-20261030-0123456789AB-CD",
-            InvoiceNumber = "FV/1/2026",
+            InvoiceNumber = "FV/1\t/2026\n",
             IssueDate = new DateTimeOffset(2026, 10, 30, 0, 0, 0, TimeSpan.Zero),
             Seller = new Seller { Nip = "5908996669", Name = "Firma\tz tabulatorem" },
             Buyer = new Buyer { Identifier = new BuyerIdentifier { Type = BuyerIdentifierType.Nip, Value = "1111111111" }, Name = "Nabywca\nw dwóch wierszach" },
@@ -226,7 +281,7 @@ public class ListFormatTests
         string[] columns = KsefCli.Commands.ListCommand.ToTsv(invoice).Split('\t');
 
         Assert.Equal(
-            ["5908996669-20261030-0123456789AB-CD", "FV/1/2026", "2026-10-30", "5908996669", "Firma z tabulatorem", "1111111111", "Nabywca w dwóch wierszach", "1230.50", "PLN"],
+            ["5908996669-20261030-0123456789AB-CD", "FV/1 /2026 ", "2026-10-30", "5908996669", "Firma z tabulatorem", "1111111111", "Nabywca w dwóch wierszach", "1230.50", "PLN"],
             columns);
     }
 
@@ -236,5 +291,43 @@ public class ListFormatTests
         InvoiceSummary invoice = new() { KsefNumber = "K", InvoiceNumber = "F", Currency = "PLN" };
 
         Assert.Equal(9, KsefCli.Commands.ListCommand.ToTsv(invoice).Split('\t').Length);
+    }
+}
+
+public class CliErrorsTests
+{
+    [Fact]
+    public void HttpTimeout_HasMessage_AndIsNotAnInterrupt()
+    {
+        TaskCanceledException timeout = new("The request was canceled due to the configured HttpClient.Timeout", new TimeoutException());
+
+        Assert.Contains("przekroczono czas", CliErrors.Describe(timeout));
+        Assert.False(CliErrors.IsInterrupt(timeout));
+    }
+
+    [Fact]
+    public void UserCancellation_IsAnInterrupt()
+    {
+        Assert.Null(CliErrors.Describe(new OperationCanceledException()));
+        Assert.True(CliErrors.IsInterrupt(new OperationCanceledException()));
+        Assert.True(CliErrors.IsInterrupt(new TaskCanceledException()));
+    }
+
+    [Fact]
+    public void KnownFailures_HaveMessages()
+    {
+        Assert.NotNull(CliErrors.Describe(new KSeF.Client.Core.Exceptions.KsefCircuitBreakerOpenException("otwarty")));
+        Assert.NotNull(CliErrors.Describe(new HttpRequestException("brak sieci")));
+        Assert.NotNull(CliErrors.Describe(new IOException("dysk pełny")));
+        Assert.NotNull(CliErrors.Describe(new UnauthorizedAccessException("brak praw")));
+        Assert.NotNull(CliErrors.Describe(new SessionException("brak sesji")));
+    }
+
+    [Fact]
+    public void ProgramBugs_AreNotHidden()
+    {
+        Assert.Null(CliErrors.Describe(new NullReferenceException()));
+        Assert.Null(CliErrors.Describe(new InvalidCastException()));
+        Assert.False(CliErrors.IsInterrupt(new NullReferenceException()));
     }
 }

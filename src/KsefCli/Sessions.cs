@@ -107,9 +107,16 @@ public static class SessionStore
 
     private static KsefSession Read(string path)
     {
-        using FileStream stream = File.OpenRead(path);
-        return JsonSerializer.Deserialize(stream, SessionTypeInfo)
-            ?? throw new SessionException($"Uszkodzony plik sesji: {path}");
+        try
+        {
+            using FileStream stream = File.OpenRead(path);
+            return JsonSerializer.Deserialize(stream, SessionTypeInfo)
+                ?? throw new JsonException("pusty dokument");
+        }
+        catch (JsonException ex)
+        {
+            throw new SessionException($"Uszkodzony plik sesji {path} ({ex.Message}) — usuń go i zaloguj się ponownie.");
+        }
     }
 }
 

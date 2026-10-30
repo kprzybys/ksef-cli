@@ -45,6 +45,17 @@ public static class LoginCommand
 
     private static async Task<int> RunAsync(KsefEnvironment env, string nip, string certPath, CancellationToken cancellationToken)
     {
+        try
+        {
+            // Najpierw miejsce na sesję: bez niego udane logowanie zostawiłoby w KSeF sesję bez tokenów u nas.
+            _ = SessionStore.Directory;
+        }
+        catch (SessionException ex)
+        {
+            CliIo.Error(ex.Message);
+            return 1;
+        }
+
         X509Certificate2 certificate;
         try
         {

@@ -24,6 +24,9 @@ internal static class Ksef
     // Ścieżka bezwzględna: testy działają w katalogu bin/ projektu testów.
     private static readonly string? Binary = Environment.GetEnvironmentVariable("KSEF_BIN") is { Length: > 0 } bin ? bin : null;
 
+    /// <summary>Wiersz polecenia uruchamiający `ksef` (dla `script`, który potrzebuje jednego polecenia powłoki).</summary>
+    public static string CommandLine => Binary is null ? $"dotnet {Dll}" : Binary;
+
     public static async Task<CliResult> RunAsync(string runtimeDir, byte[]? stdin, params string[] args)
     {
         ProcessStartInfo start = new(Binary ?? "dotnet")

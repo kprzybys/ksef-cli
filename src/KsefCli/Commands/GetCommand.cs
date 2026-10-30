@@ -136,7 +136,8 @@ public static class GetCommand
         {
             try
             {
-                return await ksef.GetInvoiceAsync(number, await tokens.GetAsync(cancellationToken), cancellationToken);
+                return await KsefRetry.OnRateLimitAsync(async () =>
+                    await ksef.GetInvoiceAsync(number, await tokens.GetAsync(cancellationToken), cancellationToken), cancellationToken);
             }
             catch (KsefApiException ex) when (IsNotYetAvailable(ex) && DateTime.UtcNow < deadline)
             {
