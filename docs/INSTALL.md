@@ -51,6 +51,10 @@ scripts/install-deps.sh --pkcs11 --yes
 | Arch | `p11-kit opensc libp11 pkcs11-provider` | |
 | openSUSE | `p11-kit opensc libp11-3 pkcs11-provider` | |
 
+Wymaga OpenSSL 3 (`libcrypto.so.3`) — mają go wszystkie sprawdzone dystrybucje (od 3.0.2 w Ubuntu 22.04).
+Brak silnika lub providera `ksef` zgłasza wprost, np. „OpenSSL nie ma providera pkcs11 — zainstaluj
+pkcs11-provider albo użyj --key-via engine”; przy OpenSSL starszym niż 3.2 domyślnie używa silnika.
+
 Klucz w TPM: dodatkowo `libtpm2-pkcs11-1` (Debian/Ubuntu) albo `tpm2-pkcs11`; do testów bez sprzętu: `softhsm2`
 (Debian/Ubuntu) albo `softhsm`. Instalacja `--pkcs11` sprawdzona w kontenerach x64 wszystkich dystrybucji
 z tabel niżej; samo logowanie — na Ubuntu 24.04 (OpenSSL 3.0). arm64 nietestowane.
