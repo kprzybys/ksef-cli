@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 
 namespace Ksef.Fa3.Tests;
 
-public partial class Fa3SchemaTests
+public class Fa3SchemaTests
 {
     // Wzory MF FA(3), które po wypełnieniu znaczników powinny być zgodne ze schematem.
     // invoice-template-fa-3-with-multiple-Subject3.xml pominięty: ma IDWew przed Nazwa w Podmiot3, czego schemat nie dopuszcza.
@@ -71,20 +71,9 @@ public partial class Fa3SchemaTests
 
     private static IReadOnlyList<Fa3ValidationError> Validate(string xml) => Fa3Schema.Validate(ToStream(xml));
 
-    private static string ReadTemplate(string name) =>
-        File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Templates", name));
+    private static string ReadTemplate(string name) => TestInvoices.Read(name);
 
-    private static string FillTemplate(string name) =>
-        Placeholder().Replace(ReadTemplate(name), m => m.Groups[1].Value switch
-        {
-            var p when p.Contains("nip", StringComparison.OrdinalIgnoreCase) => "1111111111",
-            var p when p.Contains("date") => "2026-10-30",
-            "invoice_number" => "FV/TEST/1",
-            var p => throw new InvalidOperationException($"Nieobsłużony znacznik #{p}# we wzorze {name}."),
-        });
+    private static string FillTemplate(string name) => TestInvoices.Fill(name);
 
     private static MemoryStream ToStream(string xml) => new(Encoding.UTF8.GetBytes(xml));
-
-    [GeneratedRegex("#([A-Za-z0-9_]+)#")]
-    private static partial Regex Placeholder();
 }

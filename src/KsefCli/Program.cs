@@ -14,5 +14,6 @@ RootCommand root = new("ksef — obsługa KSeF z wiersza poleceń (oficjalny kli
 root.Options.Add(envOption);
 root.Subcommands.Add(StatusCommand.Create(envOption));
 root.Subcommands.Add(ValidateCommand.Create());
+root.Subcommands.Add(ShowCommand.Create());
 
 return await root.Parse(args).InvokeAsync();

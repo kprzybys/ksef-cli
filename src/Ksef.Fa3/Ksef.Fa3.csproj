@@ -17,6 +17,8 @@
   <ItemGroup>
     <!-- Schematy FA(3) wbudowane w bibliotekę: walidacja działa bez sieci i bez plików obok binarki. -->
     <EmbeddedResource Include="..\..\schemas\fa3\*.xsd" LogicalName="Ksef.Fa3.Schemas.%(Filename)%(Extension)" />
+    <!-- Oficjalny arkusz wizualizacji FA(3) z importami i słownikami czytanymi przez document(). -->
+    <EmbeddedResource Include="..\..\stylesheets\fa3\*.xsl;..\..\stylesheets\fa3\*.xsd" LogicalName="Ksef.Fa3.Stylesheets.%(Filename)%(Extension)" />
   </ItemGroup>
 
 </Project>

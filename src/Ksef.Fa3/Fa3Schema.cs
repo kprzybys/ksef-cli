@@ -3,10 +3,11 @@ using System.Xml.Schema;
 
 namespace Ksef.Fa3;
 
-/// <summary>Błąd walidacji XSD z pozycją w pliku.</summary>
-public sealed record Fa3ValidationError(XmlSeverityType Severity, int Line, int Column, string Message)
+/// <summary>Błąd walidacji z pozycją w pliku. Source: "XSD" (schemat FA(3)) albo "KSeF" (wymagania KSeF ponad schemat).</summary>
+public sealed record Fa3ValidationError(XmlSeverityType Severity, int Line, int Column, string Message, string Source = "XSD")
 {
-    public override string ToString() => $"{Line}:{Column} {(Severity == XmlSeverityType.Error ? "błąd" : "ostrzeżenie")}: {Message}";
+    public override string ToString() =>
+        $"{Line}:{Column} {Source} {(Severity == XmlSeverityType.Error ? "błąd" : "ostrzeżenie")}: {Message}";
 }
 
 /// <summary>Walidacja dokumentu względem oficjalnego schematu FA(3) wbudowanego w bibliotekę.</summary>
@@ -57,26 +58,12 @@ public static class Fa3Schema
     private static XmlSchemaSet LoadSchemas()
     {
         System.Reflection.Assembly assembly = typeof(Fa3Schema).Assembly;
-        XmlSchemaSet set = new() { XmlResolver = new EmbeddedResolver(assembly) };
+        XmlSchemaSet set = new() { XmlResolver = new EmbeddedResourceResolver(assembly, ResourcePrefix) };
         using Stream root = assembly.GetManifestResourceStream(ResourcePrefix + "schemat.xsd")
             ?? throw new InvalidOperationException("Brak wbudowanego schematu FA(3).");
         using XmlReader reader = XmlReader.Create(root, new XmlReaderSettings { XmlResolver = null }, ResourcePrefix + "schemat.xsd");
         set.Add(XmlSchema.Read(reader, null)!);
         set.Compile();
         return set;
-    }
-
-    /// <summary>Rozwiązuje schemaLocation (lokalne nazwy plików) na zasoby wbudowane — bez sieci.</summary>
-    private sealed class EmbeddedResolver(System.Reflection.Assembly assembly) : XmlResolver
-    {
-        public override object? GetEntity(Uri absoluteUri, string? role, Type? ofObjectToReturn)
-        {
-            string name = ResourcePrefix + Path.GetFileName(absoluteUri.LocalPath);
-            return assembly.GetManifestResourceStream(name)
-                ?? throw new XmlSchemaException($"Schemat {absoluteUri} nie jest wbudowany (oczekiwano zasobu {name}).");
-        }
-
-        public override Uri ResolveUri(Uri? baseUri, string? relativeUri) =>
-            new($"embedded:///{Path.GetFileName(relativeUri ?? "")}");
     }
 }

@@ -25,20 +25,30 @@ nie trzeba pobierać.
 | Komenda | Logowanie | Opis |
 |---|---|---|
 | `ksef status [-e test\|demo\|prod]` | nie | Komunikaty Latarni MF o dostępności KSeF + czy API środowiska odpowiada. Kod wyjścia: 0 dostępny, 2 KSeF niedostępny/prace, 1 błąd połączenia. |
-| `ksef validate <pliki>...` | nie (offline) | Walidacja XML faktury względem schematu FA(3). Kod wyjścia: 0 wszystkie poprawne, 1 jest błąd. |
+| `ksef validate <pliki>...` | nie (offline) | Kontrola przed wysyłką: wymagania KSeF (UTF-8 bez BOM, kodowanie w prologu, brak instrukcji przetwarzania, niezalecane znaki Unicode, limit 1 MB / 3 MB z załącznikiem) + schemat FA(3). Kod wyjścia: 0 wszystkie poprawne, 1 jest błąd. |
+| `ksef show <plik> [-o plik.html] [--open]` | nie (offline) | Podgląd faktury w HTML oficjalnym arkuszem MF (`styl.xsl`). |
 
 Domyślne środowisko: `test`.
 
 ## Faktury FA(3)
 
-- `schemas/fa3/` — oficjalny schemat FA(3) z crd.gov.pl (`wzor/2025/06/25/13775`) z importami,
-  `schemaLocation` przepisane na lokalne pliki. Pobiera `scripts/fetch-fa3-schemas.py`.
+- `schemas/fa3/` — oficjalny schemat FA(3) z crd.gov.pl (`wzor/2025/06/25/13775`) z importami.
+- `stylesheets/fa3/` — oficjalny arkusz wizualizacji `styl.xsl` (XSLT 1.0) ze wspólnymi szablonami
+  i słownikami (kraje, waluty, urzędy) czytanymi przez `document()`.
+- Oba katalogi pobiera `scripts/fetch-fa3-schemas.py`; odwołania są przepisane na lokalne nazwy plików,
+  a pliki wbudowane w `Ksef.Fa3.dll` — walidacja i podgląd nie sięgają do sieci.
 - `src/Ksef.Fa3/` — klasy C# wygenerowane ze schematu (`scripts/generate-fa3.sh`, narzędzie
-  `dotnet-xscgen` z `dotnet-tools.json`), walidator XSD (`Fa3Schema`, schematy wbudowane w DLL)
-  i odczyt/zapis (`Fa3Serializer`). Katalogu `Generated/` nie edytujemy ręcznie.
+  `dotnet-xscgen` z `dotnet-tools.json`), walidator XSD (`Fa3Schema`),
+  wymagania KSeF ponad XSD (`KsefDocumentRules`, wg `ksef-api/faktury/weryfikacja-faktury.md`),
+  oba naraz (`Fa3Validator`), podgląd HTML (`Fa3Html`) i odczyt/zapis (`Fa3Serializer`). Katalogu `Generated/` nie edytujemy ręcznie.
 - Nowa wersja schematu: `scripts/fetch-fa3-schemas.py <URL> && scripts/generate-fa3.sh`, potem testy.
 
 XSD sprawdza strukturę, nie logikę (sumy VAT, adnotacje) — tę trzeba sprawdzać osobno.
+Nie sprawdzamy jeszcze duplikatów (NIP sprzedawcy + `RodzajFaktury` + `P_2`, błąd KSeF 440) — wymaga
+lokalnego rejestru wysłanych faktur.
+
+Do KSeF wysyłamy dokładnie zwalidowane bajty: KSeF porównuje skrót SHA-256 i rozmiar pliku, więc
+po walidacji pliku nie wolno przeformatowywać.
 
 ## Testy
 

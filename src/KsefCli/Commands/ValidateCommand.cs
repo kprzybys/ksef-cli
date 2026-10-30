@@ -3,7 +3,7 @@ using Ksef.Fa3;
 
 namespace KsefCli.Commands;
 
-/// <summary>`ksef validate` — walidacja pliku faktury względem schematu FA(3), offline.</summary>
+/// <summary>`ksef validate` — kontrola pliku faktury przed wysyłką: wymagania KSeF + schemat FA(3), offline.</summary>
 public static class ValidateCommand
 {
     public static Command Create()
@@ -15,7 +15,7 @@ public static class ValidateCommand
         };
         filesArgument.AcceptExistingOnly();
 
-        Command command = new("validate", "Sprawdza plik(i) XML faktury względem oficjalnego schematu FA(3) (bez sieci)");
+        Command command = new("validate", "Sprawdza plik(i) XML faktury: wymagania KSeF (kodowanie, znaki, rozmiar) i schemat FA(3), bez sieci");
         command.Arguments.Add(filesArgument);
         command.SetAction(parseResult => Run(parseResult.GetRequiredValue(filesArgument)));
         return command;
@@ -26,11 +26,7 @@ public static class ValidateCommand
         int invalid = 0;
         foreach (FileInfo file in files)
         {
-            IReadOnlyList<Fa3ValidationError> errors;
-            using (FileStream stream = file.OpenRead())
-            {
-                errors = Fa3Schema.Validate(stream);
-            }
+            IReadOnlyList<Fa3ValidationError> errors = Fa3Validator.Validate(File.ReadAllBytes(file.FullName));
 
             if (errors.Count == 0)
             {
