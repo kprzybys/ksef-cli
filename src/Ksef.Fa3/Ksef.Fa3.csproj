@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Ksef.Fa3</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Kod wygenerowany przez scripts/generate-fa3.sh — nie edytować ręcznie. -->
+    <Compile Update="Generated/**/*.cs">
+      <AutoGen>true</AutoGen>
+    </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Schematy FA(3) wbudowane w bibliotekę: walidacja działa bez sieci i bez plików obok binarki. -->
+    <EmbeddedResource Include="..\..\schemas\fa3\*.xsd" LogicalName="Ksef.Fa3.Schemas.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>

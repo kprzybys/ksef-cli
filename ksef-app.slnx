@@ -5,6 +5,10 @@
     <Project Path="external/ksef-client-csharp/KSeF.Client/KSeF.Client.csproj" />
   </Folder>
   <Folder Name="/src/">
+    <Project Path="src/Ksef.Fa3/Ksef.Fa3.csproj" />
     <Project Path="src/KsefCli/KsefCli.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Ksef.Fa3.Tests/Ksef.Fa3.Tests.csproj" />
   </Folder>
 </Solution>

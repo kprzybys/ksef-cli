@@ -13,5 +13,6 @@ envOption.AcceptOnlyFromAmong(KsefEnvironment.Names);
 RootCommand root = new("ksef — obsługa KSeF z wiersza poleceń (oficjalny klient MF)");
 root.Options.Add(envOption);
 root.Subcommands.Add(StatusCommand.Create(envOption));
+root.Subcommands.Add(ValidateCommand.Create());
 
 return await root.Parse(args).InvokeAsync();
