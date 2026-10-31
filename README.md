@@ -1,18 +1,19 @@
 # ksef-cli
 
 **Krajowy System e-Faktur z wiersza poleceń.** Wysyłanie, odbieranie, walidacja i podgląd faktur FA(3)
-w KSeF 2.0 — na oficjalnej bibliotece Ministerstwa Finansów, w jednej natywnej binarce dla Linuksa.
+w KSeF 2.0 — na oficjalnej bibliotece Ministerstwa Finansów, w jednej natywnej binarce dla Linuksa i macOS.
 `ksef` przenosi gotowe pliki XML faktur między komputerem a KSeF — faktur nie tworzy i nie księguje.
 
 [![CI](https://github.com/kprzybys/ksef-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/kprzybys/ksef-cli/actions/workflows/ci.yml)
 [![Wydanie](https://img.shields.io/github/v/release/kprzybys/ksef-cli?label=wydanie)](https://github.com/kprzybys/ksef-cli/releases)
 [![Licencja: MIT](https://img.shields.io/badge/licencja-MIT-blue)](LICENSE)
 ![Linux x64 | arm64](https://img.shields.io/badge/Linux-x64%20%7C%20arm64-informational)
+![macOS Apple Silicon | Intel](https://img.shields.io/badge/macOS-Apple%20Silicon%20%7C%20Intel-informational)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/kprzybys/ksef-cli/badge)](https://scorecard.dev/viewer/?uri=github.com/kprzybys/ksef-cli)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/16126/badge)](https://www.bestpractices.dev/projects/16126)
 
 *A command-line client for Poland's national e-invoicing system (KSeF 2.0), built on the official Ministry
-of Finance library and shipped as a single native binary for Linux.*
+of Finance library and shipped as a single native binary for Linux and macOS.*
 
 ```console
 $ ksef validate faktury/*.xml && ksef send faktury/*.xml | tee wyslane.tsv | ksef upo -d upo/
@@ -26,19 +27,20 @@ $ ksef show faktura.xml -e prod --ksef-number 1234563218-20261031-0A1B2C3D4E5F-6
   [`CIRFMF/ksef-client-csharp`](https://github.com/CIRFMF/ksef-client-csharp), budowana ze źródeł —
   nie własna, nieoficjalna implementacja API.
 - **Jedna binarka, bez .NET.** Native AOT, ok. 15 MB, start w ok. 15 ms. Działa na Ubuntu 22.04+,
-  Debianie 12+, RHEL/Alma 9+, Fedorze, Archu i openSUSE Tumbleweed — x64 i arm64 (także Raspberry Pi).
+  Debianie 12+, RHEL/Alma 9+, Fedorze, Archu i openSUSE Tumbleweed — x64 i arm64 (także Raspberry Pi) — oraz na
+  macOS 12+ (Apple Silicon i Intel), bez żadnych pakietów.
 - **Po uniksowemu.** Wynik na stdout, błędy na stderr, `-` to stdin/stdout, `--json` dla skryptów, stałe kody
   wyjścia, zero pytań interaktywnych — komendy łączą się w potoki i działają w cronie.
 - **Bezpiecznie.** Sekrety (token, PIN, klucz) nigdy w argumentach wywołania; logowanie certyfikatem,
   tokenem KSeF, kluczem na karcie/tokenie/TPM (PKCS#11) albo podpisem zewnętrznym (np. Profil Zaufany);
-  sesje w RAM (`$XDG_RUNTIME_DIR`), prawa 0600.
+  sesje w RAM (`$XDG_RUNTIME_DIR`; macOS: `$TMPDIR`), prawa 0600.
 - **Offline, gdzie się da.** Walidacja (schemat FA(3) + wymagania techniczne KSeF + sumy kontrolne NIP)
   i podgląd HTML oficjalnym arkuszem MF z kodem QR weryfikującym fakturę — bez sieci.
 
 ## Szybki start
 
 ```bash
-# 1. Instalacja (x64; dla arm64: linux-arm64)
+# 1. Instalacja (x64; dla arm64: linux-arm64; macOS: docs/INSTALL.md#macos)
 v=0.1.3 a=linux-x64
 curl -LO https://github.com/kprzybys/ksef-cli/releases/download/v$v/ksef-$v-$a.tar.gz{,.sha256}
 sha256sum -c ksef-$v-$a.tar.gz.sha256 && tar -xzf ksef-$v-$a.tar.gz
