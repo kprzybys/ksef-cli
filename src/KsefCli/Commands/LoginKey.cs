@@ -39,6 +39,13 @@ public static partial class LoginCommand
     private static bool TryAttachHardwareKey(X509Certificate2 certificate, HardwareKey key, [NotNullWhen(true)] out AttachedKey? attached)
     {
         attached = null;
+        // Klucz z urządzenia idzie przez OpenSSL (engine/provider pkcs11); .NET na macOS używa kryptografii Apple.
+        if (OperatingSystem.IsMacOS())
+        {
+            CliIo.Error($"{key.Uri}: klucz z karty/tokenu (PKCS#11) działa na razie tylko na Linuksie — na macOS zaloguj się "
+                + "certyfikatem z pliku, tokenem KSeF albo podpisem zewnętrznym (--request/--signed).");
+            return false;
+        }
         string? pin = null;
         if (key.PinFile is { } pinFile)
         {

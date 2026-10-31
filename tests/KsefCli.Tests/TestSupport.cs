@@ -1,9 +1,11 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.Versioning;
 using System.Text;
 
 // Narzędzie jest dla Linuksa: testy sprawdzają uprawnienia plików i używają `script`.
 [assembly: SupportedOSPlatform("linux")]
+[assembly: SupportedOSPlatform("macos")]
 
 namespace KsefCli.Tests;
 
@@ -29,7 +31,14 @@ internal static class Ksef
 
     public static Task<CliResult> RunAsync(string runtimeDir, byte[]? stdin, params string[] args) => RunAsync(runtimeDir, stdin, null, args);
 
-    public static async Task<CliResult> RunAsync(string runtimeDir, byte[]? stdin, IReadOnlyDictionary<string, string>? environment, params string[] args)
+    public static Task<CliResult> RunAsync(string runtimeDir, byte[]? stdin, IReadOnlyDictionary<string, string>? environment, params string[] args) =>
+        RunCoreAsync(runtimeDir, stdin, environment, null, args);
+
+    /// <summary>Jak RunAsync, ale po `after` wysyła SIGINT (jak Ctrl+C albo `timeout -s INT` w cronie) — do testów przerwania.</summary>
+    public static Task<CliResult> RunInterruptedAsync(string runtimeDir, TimeSpan after, IReadOnlyDictionary<string, string>? environment, params string[] args) =>
+        RunCoreAsync(runtimeDir, null, environment, after, args);
+
+    private static async Task<CliResult> RunCoreAsync(string runtimeDir, byte[]? stdin, IReadOnlyDictionary<string, string>? environment, TimeSpan? interruptAfter, params string[] args)
     {
         ProcessStartInfo start = new(Binary ?? "dotnet")
         {
@@ -58,6 +67,7 @@ internal static class Ksef
         }
 
         using Process process = Process.Start(start) ?? throw new InvalidOperationException("Nie uruchomiono ksef.");
+        Task interrupt = interruptAfter is { } after ? InterruptAsync(process, after) : Task.CompletedTask;
         Task<string> stderr = process.StandardError.ReadToEndAsync();
         using MemoryStream stdout = new();
         Task copyStdout = process.StandardOutput.BaseStream.CopyToAsync(stdout);
@@ -71,41 +81,22 @@ internal static class Ksef
         using CancellationTokenSource timeout = new(TimeSpan.FromMinutes(3));
         await process.WaitForExitAsync(timeout.Token);
         await copyStdout;
+        await interrupt;
         return new CliResult(process.ExitCode, stdout.ToArray(), await stderr);
+    }
+
+    // `kill` zamiast `timeout` z coreutils — tego drugiego nie ma na macOS.
+    private static async Task InterruptAsync(Process process, TimeSpan after)
+    {
+        await Task.Delay(after);
+        if (!process.HasExited)
+        {
+            using Process kill = Process.Start("kill", ["-INT", process.Id.ToString(CultureInfo.InvariantCulture)]);
+            await kill.WaitForExitAsync();
+        }
     }
 
     public static Task<CliResult> RunAsync(string runtimeDir, params string[] args) => RunAsync(runtimeDir, null, args);
-
-    /// <summary>Wiersz powłoki z `ksef` w środku (np. `timeout -s INT …`) — do testów sygnałów; to samo środowisko co RunAsync.</summary>
-    public static async Task<CliResult> RunShellAsync(string runtimeDir, string command, IReadOnlyDictionary<string, string>? environment = null)
-    {
-        ProcessStartInfo start = new("bash")
-        {
-            RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        start.ArgumentList.Add("-c");
-        start.ArgumentList.Add(command);
-        start.Environment["XDG_RUNTIME_DIR"] = runtimeDir;
-        start.Environment["DOTNET_CLI_UI_LANGUAGE"] = "pl";
-        start.Environment.Remove("KSEF_ENV");
-        start.Environment.Remove("KSEF_API_URL");
-        foreach ((string name, string value) in environment ?? new Dictionary<string, string>())
-        {
-            start.Environment[name] = value;
-        }
-
-        using Process process = Process.Start(start) ?? throw new InvalidOperationException("Nie uruchomiono bash.");
-        process.StandardInput.Close();
-        Task<string> stderr = process.StandardError.ReadToEndAsync();
-        using MemoryStream stdout = new();
-        await process.StandardOutput.BaseStream.CopyToAsync(stdout);
-        using CancellationTokenSource timeout = new(TimeSpan.FromMinutes(1));
-        await process.WaitForExitAsync(timeout.Token);
-        return new CliResult(process.ExitCode, stdout.ToArray(), await stderr);
-    }
 }
 
 /// <summary>Katalog tymczasowy usuwany po teście.</summary>

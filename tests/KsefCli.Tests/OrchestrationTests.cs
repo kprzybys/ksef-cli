@@ -294,9 +294,8 @@ public class SendOrchestrationTests
         });
         (TempDir dir, string[] files) = Invoices(3);
         using TempDir _ = dir;
-        string command = $"timeout --preserve-status -s INT 4 {Ksef.CommandLine} send {string.Join(' ', files)}";
-
-        CliResult result = await Ksef.RunShellAsync(dir.Path, command, new Dictionary<string, string> { ["KSEF_API_URL"] = ksef.Url });
+        CliResult result = await Ksef.RunInterruptedAsync(dir.Path, TimeSpan.FromSeconds(4),
+            new Dictionary<string, string> { ["KSEF_API_URL"] = ksef.Url }, ["send", .. files]);
 
         Assert.Equal(130, result.ExitCode);
         Assert.Empty(result.StdoutBytes);

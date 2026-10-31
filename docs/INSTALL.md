@@ -1,7 +1,7 @@
 # Instalacja ksef
 
-`ksef` to jedna natywna binarka (Native AOT) dla Linuksa **x64** i **arm64**. Nie potrzebuje .NET,
-ale korzysta z kilku bibliotek systemowych.
+`ksef` to jedna natywna binarka (Native AOT) dla Linuksa **x64** i **arm64**, a od wersji 0.1.4 także dla
+macOS (Apple Silicon i Intel — [niżej](#macos)). Nie potrzebuje .NET, ale korzysta z kilku bibliotek systemowych.
 
 ## Wymagania binarki
 
@@ -58,6 +58,30 @@ pkcs11-provider albo użyj --key-via engine”; przy OpenSSL starszym niż 3.2 d
 Klucz w TPM: dodatkowo `libtpm2-pkcs11-1` (Debian/Ubuntu) albo `tpm2-pkcs11`; do testów bez sprzętu: `softhsm2`
 (Debian/Ubuntu) albo `softhsm`. Instalacja `--pkcs11` sprawdzona w kontenerach x64 wszystkich dystrybucji
 z tabel niżej; samo logowanie — na Ubuntu 24.04 (OpenSSL 3.0). arm64 nietestowane.
+
+## macOS
+
+Od wersji 0.1.4: `ksef-<wersja>-osx-arm64.tar.gz` (Apple Silicon) i `osx-x64` (Intel). Wszystko, czego binarka
+potrzebuje (ICU, kryptografia, libxslt), jest w systemie — bez Homebrew i bez pakietów.
+
+```bash
+v=0.1.4 a=osx-arm64   # Intel: osx-x64
+curl -LO https://github.com/kprzybys/ksef-cli/releases/download/v$v/ksef-$v-$a.tar.gz{,.sha256}
+shasum -a 256 -c ksef-$v-$a.tar.gz.sha256 && tar -xzf ksef-$v-$a.tar.gz
+mkdir -p ~/.local/bin && install -m755 ksef-$v-$a/ksef ~/.local/bin/ksef   # ~/.local/bin dopisz do PATH
+ksef --help
+```
+
+- **Gatekeeper.** Binarka nie jest jeszcze notaryzowana przez Apple. Pobrana przez `curl` (jak wyżej) uruchamia się
+  od razu; pobrana przeglądarką dostaje znacznik kwarantanny i macOS jej nie otworzy — wtedy
+  `xattr -d com.apple.quarantine ~/.local/bin/ksef`. Pochodzenie archiwum sprawdzisz tak samo jak na Linuksie
+  (atestacja, [niżej](#instalacja-z-wydania)).
+- **Sesje** trzyma w `$TMPDIR/ksef/` (prywatny katalog użytkownika, prawa 0700) — macOS nie ma `$XDG_RUNTIME_DIR`.
+- **Klucz na karcie/tokenie (PKCS#11)** na razie tylko na Linuksie; na macOS logowanie certyfikatem z pliku,
+  tokenem KSeF albo podpisem zewnętrznym (`--request`/`--signed`, np. Profil Zaufany).
+- **Budowanie ze źródeł:** Xcode Command Line Tools (`xcode-select --install`), .NET SDK 10
+  (`brew install --cask dotnet-sdk`), GNU make z Homebrew (`gmake`; systemowy make 3.81 też wystarcza), potem
+  `make build test aot` jak na Linuksie. Lint (`make lint`, `make hooks`) potrzebuje `uv` (`brew install uv`).
 
 ## Instalacja z wydania
 

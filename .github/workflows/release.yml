@@ -1,6 +1,6 @@
 # Wydanie: tag v* → binarki Native AOT linux-x64 i linux-arm64, zbudowane w kontenerze AlmaLinux 9
-# (scripts/release-build.sh, glibc 2.34), sprawdzone w czystych kontenerach dystrybucji (scripts/test-distros.sh)
-# i dołączone do SZKICU wydania na GitHubie z atestacją pochodzenia — publikuje człowiek po przejrzeniu.
+# (scripts/release-build.sh, glibc 2.34), sprawdzone w czystych kontenerach dystrybucji (scripts/test-distros.sh),
+# oraz osx-arm64 i osx-x64 zbudowane na runnerach macOS i sprawdzone tamże — wszystkie dołączone do SZKICU wydania na GitHubie z atestacją pochodzenia — publikuje człowiek po przejrzeniu.
 # Ręczne uruchomienie (workflow_dispatch) tylko buduje i testuje, bez wydania.
 name: Release
 
@@ -37,12 +37,20 @@ jobs:
       matrix:
         include:
           - runner: ubuntu-24.04
+            os: linux
             arch: x64
             # Arch Linux nie ma oficjalnego obrazu arm64 — tylko na x64.
             images: ubuntu:22.04 ubuntu:24.04 ubuntu:26.04 debian:12 debian:13 almalinux:9 almalinux:10 fedora:latest archlinux:latest opensuse/tumbleweed
           - runner: ubuntu-24.04-arm
+            os: linux
             arch: arm64
             images: ubuntu:22.04 ubuntu:24.04 ubuntu:26.04 debian:12 debian:13 almalinux:9 almalinux:10 fedora:latest opensuse/tumbleweed
+          - runner: macos-15
+            os: osx
+            arch: arm64
+          - runner: macos-15-intel
+            os: osx
+            arch: x64
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: write
@@ -59,7 +67,7 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
         with:
           global-json-file: global.json
-      - name: Budowanie (kontener AlmaLinux 9)
+      - name: "Budowanie (Linux — kontener AlmaLinux 9, macOS — na runnerze)"
         run: |
           if [[ $GITHUB_REF_TYPE == tag ]]; then
             scripts/release-build.sh "${GITHUB_REF_NAME#v}"
@@ -67,12 +75,21 @@ jobs:
             scripts/release-build.sh
           fi
       - name: Test w czystych kontenerach
+        if: matrix.os == 'linux'
         run: |
-          tar -C dist/release -xzf dist/release/ksef-*-linux-${{ matrix.arch }}.tar.gz
+          tar -C dist/release -xzf dist/release/ksef-*-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
           # shellcheck disable=SC2086 # lista obrazów rozdzielona spacjami
-          scripts/test-distros.sh dist/release/ksef-*-linux-${{ matrix.arch }}/ksef ${{ matrix.images }} | tee dist/distros.md
+          scripts/test-distros.sh dist/release/ksef-*-${{ matrix.os }}-${{ matrix.arch }}/ksef ${{ matrix.images }} | tee dist/distros.md
           cat dist/distros.md >> "$GITHUB_STEP_SUMMARY"
           ! grep -q "BŁĄD" dist/distros.md
+      # Na macOS nie ma kontenerów: testy CLI na rozpakowanej binarce z archiwum, na czystym runnerze.
+      - name: Test binarki z archiwum (macOS)
+        if: matrix.os == 'osx'
+        run: |
+          tar -C dist/release -xzf dist/release/ksef-*-osx-${{ matrix.arch }}.tar.gz
+          bin=$(ls "$PWD"/dist/release/ksef-*-osx-${{ matrix.arch }}/ksef)
+          "$bin" --version
+          KSEF_BIN="$bin" dotnet test --project tests/KsefCli.Tests -c Release
       # SBOM (CycloneDX): podpisana lista składników binarki — przy nowej luce w zależności od razu widać,
       # czy dotyczy ksef. Także bez taga (workflow_dispatch), żeby sprawdzić generowanie.
       - name: SBOM
@@ -80,8 +97,8 @@ jobs:
         run: |
           dotnet tool restore
           version=$(git describe --tags --always)
-          archive=$(ls dist/release/ksef-*-linux-${{ matrix.arch }}.tar.gz)
-          scripts/sbom.sh "${version#v}" linux-${{ matrix.arch }} "$archive.cdx.json"
+          archive=$(ls dist/release/ksef-*-${{ matrix.os }}-${{ matrix.arch }}.tar.gz)
+          scripts/sbom.sh "${version#v}" ${{ matrix.os }}-${{ matrix.arch }} "$archive.cdx.json"
           echo "archive=$archive" >> "$GITHUB_OUTPUT"
       # Atestacja pochodzenia (SLSA build provenance, Sigstore): każdy może sprawdzić, że archiwum zbudował
       # ten workflow z tego repo — `gh attestation verify` albo niezależnie `cosign` (docs/INSTALL.md).
@@ -105,7 +122,7 @@ jobs:
           BUNDLE: ${{ steps.attest.outputs.bundle-path }}
           SBOM_BUNDLE: ${{ steps.attest-sbom.outputs.bundle-path }}
         run: |
-          archive=$(ls dist/release/ksef-*-linux-${{ matrix.arch }}.tar.gz)
+          archive=$(ls dist/release/ksef-*-${{ matrix.os }}-${{ matrix.arch }}.tar.gz)
           cp "$BUNDLE" "$archive.sigstore.json"
           cp "$SBOM_BUNDLE" "$archive.cdx.json.sigstore.json"
       - name: Dołączenie do szkicu wydania

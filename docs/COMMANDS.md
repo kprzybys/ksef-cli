@@ -127,5 +127,5 @@ ksef login --nip 5908996669 --cert cert.pem --key 'pkcs11:token=Karta;object=Pod
 
 Sesje (access token ważny ok. 15 min, refresh token 7 dni) to stan narzędzia, nie trwały sekret:
 `$XDG_RUNTIME_DIR/ksef/<środowisko>-<NIP>.json` z prawami 0600 — katalog w RAM, znika po wylogowaniu
-z systemu. Komendy wymagające logowania same odświeżają access token. Przy kilku sesjach w jednym
+z systemu (macOS: `$TMPDIR/ksef/`, prywatny katalog tymczasowy użytkownika). Komendy wymagające logowania same odświeżają access token. Przy kilku sesjach w jednym
 środowisku wskazuje się `--nip`.

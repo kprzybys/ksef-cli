@@ -9,6 +9,14 @@ internal static unsafe partial class LibXslt
 {
     private const string Xslt = "libxslt.so.1";
 
+    // macOS ma libxslt w systemie pod inną nazwą (w dyld shared cache, bez pliku na dysku — dlopen i tak ją znajdzie).
+    private const string MacXslt = "/usr/lib/libxslt.1.dylib";
+
+    private static readonly Lazy<nint> Handle = new(() => NativeLibrary.Load(OperatingSystem.IsMacOS() ? MacXslt : Xslt));
+
+    static LibXslt() => NativeLibrary.SetDllImportResolver(typeof(LibXslt).Assembly,
+        (name, _, _) => string.Equals(name, Xslt, StringComparison.Ordinal) ? Handle.Value : 0);
+
     // Dokument wejściowy nigdy nie sięga do sieci; bez NOENT/DTDLOAD encje zewnętrzne nie są ładowane.
     private const int XmlParseNoNet = 1 << 11;
 
@@ -90,7 +98,7 @@ internal static unsafe partial class LibXslt
 
     // libxml2 przez uchwyt libxslt: dlsym przeszukuje też jej zależności, więc dostajemy tę libxml2, z którą
     // zbudowano libxslt — libxml2.so.2, a od libxml2 2.14 (np. Ubuntu 26.04) libxml2.so.16 — bez zgadywania nazwy.
-    private static nint Xml2(string name) => NativeLibrary.GetExport(NativeLibrary.Load(Xslt), name);
+    private static nint Xml2(string name) => NativeLibrary.GetExport(Handle.Value, name);
 
     [LibraryImport(Xslt, StringMarshalling = StringMarshalling.Utf8)]
     private static partial nint xsltParseStylesheetFile(string filename);

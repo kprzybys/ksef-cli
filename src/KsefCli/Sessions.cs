@@ -11,6 +11,7 @@ public sealed record KsefSession(string Environment, string Nip, string Referenc
 /// <summary>
 /// Sesje to stan narzędzia, nie trwały sekret: trzymamy je w `$XDG_RUNTIME_DIR/ksef/` (tmpfs, znika
 /// po wylogowaniu z systemu), plik na sesję `&lt;środowisko&gt;-&lt;NIP&gt;.json` z prawami 0600.
+/// macOS nie ma XDG_RUNTIME_DIR: tam `$TMPDIR/ksef/` — prywatny katalog użytkownika (0700), czyszczony przez system.
 /// </summary>
 public static class SessionStore
 {
@@ -27,7 +28,11 @@ public static class SessionStore
         {
             string runtimeDir = Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR") is { Length: > 0 } dir
                 ? dir
-                : throw new SessionException("Brak XDG_RUNTIME_DIR — nie ma gdzie trzymać sesji (zwykle ustawia go systemd przy logowaniu).");
+                : OperatingSystem.IsMacOS()
+                    ? Environment.GetEnvironmentVariable("TMPDIR") is { Length: > 0 } tmp
+                        ? tmp
+                        : throw new SessionException("Brak TMPDIR — nie ma gdzie trzymać sesji (zwykle ustawia go macOS przy logowaniu).")
+                    : throw new SessionException("Brak XDG_RUNTIME_DIR — nie ma gdzie trzymać sesji (zwykle ustawia go systemd przy logowaniu).");
             return Path.Combine(runtimeDir, "ksef");
         }
     }

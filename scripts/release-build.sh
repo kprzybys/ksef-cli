@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Wydanie ksef (Native AOT) dla architektury tej maszyny, zbudowane w kontenerze AlmaLinux 9
-# (scripts/release.Containerfile), żeby binarka działała też na starszych dystrybucjach.
-# Wynik: dist/release/ksef-<wersja>-linux-<x64|arm64>.tar.gz + .sha256.
+# Wydanie ksef (Native AOT) dla architektury tej maszyny. Linux: w kontenerze AlmaLinux 9
+# (scripts/release.Containerfile), żeby binarka działała też na starszych dystrybucjach. macOS: wprost na
+# maszynie (Native AOT nie kompiluje krzyżowo na macOS; kontenerów z macOS nie ma).
+# Wynik: dist/release/ksef-<wersja>-<linux|osx>-<x64|arm64>.tar.gz + .sha256.
 # Użycie: scripts/release-build.sh [wersja]   (domyślnie git describe)
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -14,9 +15,32 @@ version=${1:-$(git describe --tags --always --dirty)}
 version=${version#v}
 case $(uname -m) in
     x86_64) arch=x64 ;;
-    aarch64) arch=arm64 ;;
+    aarch64 | arm64) arch=arm64 ;;
     *) echo "release-build: nieobsługiwana architektura $(uname -m) (Native AOT: x64, arm64)" >&2; exit 1 ;;
 esac
+out=dist/release
+mkdir -p "$out"
+
+if [[ $(uname -s) == Darwin ]]; then
+    make aot RID="osx-$arch" KSEF_VERSION="$version"
+    # Binarka nie może zależeć od niczego spoza systemu (np. bibliotek z Homebrew).
+    foreign=$(otool -L dist/aot/ksef | tail -n +2 | awk '{print $1}' | grep -vE '^(/usr/lib/|/System/Library/)' || true)
+    if [[ -n $foreign ]]; then
+        echo "release-build: binarka zależy od bibliotek spoza systemu: $foreign" >&2
+        exit 1
+    fi
+    minos=$(otool -l dist/aot/ksef | awk '/LC_BUILD_VERSION/ {found = 1} found && $1 == "minos" {print $2; exit}')
+    name=ksef-$version-osx-$arch
+    staging=$(mktemp -d)
+    mkdir "$staging/$name"
+    cp dist/aot/ksef README.md LICENSE THIRD-PARTY-NOTICES.md "$staging/$name/"
+    tar -C "$staging" -czf "$out/$name.tar.gz" "$name"
+    rm -rf "$staging"
+    (cd "$out" && shasum -a 256 "$name.tar.gz" >"$name.tar.gz.sha256")
+    echo "SDK $(dotnet --version), macOS >= ${minos:-?}: $out/$name.tar.gz"
+    exit 0
+fi
+
 engine=${CONTAINER_ENGINE:-$(command -v docker || command -v podman || true)}
 if [[ -z $engine ]]; then
     echo "release-build: potrzebny docker albo podman" >&2
@@ -31,8 +55,6 @@ if [[ -z $sdk ]]; then
     sdk=$(grep -m1 -oE '"latest-sdk": *"[^"]+"' <<<"$metadata" | sed -E 's/.*"([^"]+)"$/\1/')
 fi
 image=ksef-release-alma9:sdk-$sdk
-out=dist/release
-mkdir -p "$out"
 "$engine" build -q -t "$image" --build-arg DOTNET_SDK_VERSION="$sdk" -f scripts/release.Containerfile scripts >/dev/null
 
 # Źródła tylko do odczytu, budowanie na kopii w kontenerze: obj/ i bin/ z builda na hoście się nie mieszają.
