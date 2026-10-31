@@ -40,6 +40,9 @@ public static class SendCommand
         public int Index { get; init; } = Index;
 
         public bool Accepted => KsefNumber is not null;
+
+        /// <summary>true: nie wiadomo, czy KSeF fakturę przyjął — sprawdzić przed ponowną wysyłką (w JSON tylko wtedy).</summary>
+        public bool? StatusUnknown { get; init; }
     }
 
     public static Command Create(Option<string> envOption)
@@ -112,6 +115,7 @@ public static class SendCommand
         }
 
         List<SendResult> results;
+        bool interrupted;
         try
         {
             KsefSession session = SessionStore.Resolve(env.Name, nip);
@@ -123,7 +127,7 @@ public static class SendCommand
             await using ServiceProvider provider = await KsefServices.CreateWithCryptographyAsync(env, cancellationToken);
             using IServiceScope scope = provider.CreateScope();
             AccessTokenProvider tokens = new(session, scope.ServiceProvider.GetRequiredService<IAuthorizationClient>());
-            results = await SendAsync(
+            (results, interrupted) = await SendAsync(
                 scope.ServiceProvider.GetRequiredService<IKSeFClient>(),
                 scope.ServiceProvider.GetRequiredService<ICryptographyService>(),
                 tokens, invoices, cancellationToken);
@@ -148,15 +152,20 @@ public static class SendCommand
                 }
                 continue;
             }
-            string code = result.Code is { } c ? $"KSeF {c} " : result.HttpStatus is { } h ? $"HTTP {h} " : "";
+            string code = result.StatusUnknown is true ? "STATUS NIEZNANY: "
+                : result.Code is { } c ? $"KSeF {c} " : result.HttpStatus is { } h ? $"HTTP {h} " : "";
+            string reference = result.StatusUnknown is true && result.InvoiceReferenceNumber is { } r ? $" (numer referencyjny {r}, sesja {result.SessionReferenceNumber})" : "";
             string details = result.Details is { Count: > 0 } d ? $" ({string.Join("; ", d)})" : "";
             string extensions = result.Extensions is { Count: > 0 } e ? $" [{string.Join(", ", e.Select(kv => $"{kv.Key}={kv.Value}"))}]" : "";
-            CliIo.Error($"{result.File}: {code}{result.Description}{details}{extensions}");
+            CliIo.Error($"{result.File}: {code}{result.Description}{reference}{details}{extensions}");
         }
-        return results.All(r => r.Accepted) ? 0 : 1;
+        return interrupted ? 130 : results.All(r => r.Accepted) ? 0 : 1;
     }
 
-    private static async Task<List<SendResult>> SendAsync(
+    /// <summary>Wyniki w kolejności wejścia; Interrupted — przerwano (Ctrl+C, SIGTERM), części faktur nie sprawdzono.</summary>
+    private sealed record SendOutcome(List<SendResult> Results, bool Interrupted);
+
+    private static async Task<SendOutcome> SendAsync(
         IKSeFClient ksef, ICryptographyService crypto, AccessTokenProvider tokens,
         List<(string Name, byte[] Xml)> invoices, CancellationToken cancellationToken)
     {
@@ -168,11 +177,19 @@ public static class SendCommand
         // faktur muszą trafić na wyjście, bo ponowna wysyłka skończy się duplikatem (440).
         List<SendResult> results = [];
         List<(int Index, string Name, string Session, string Reference)> sent = [];
-        // Odpowiedź na wysyłkę nie dotarła (sieć, limit czasu) — KSeF mógł fakturę przyjąć.
+        // Odpowiedź na wysyłkę nie dotarła (sieć, limit czasu, błąd bramy) — KSeF mógł fakturę przyjąć.
         List<(int Index, string Name, string Session, byte[] Xml, Exception Error, string Message)> unknown = [];
+        // Powód, dla którego kolejnych faktur już nie wysyłamy (nie da się otworzyć sesji, przerwanie).
+        string? stop = null;
+        bool interrupted = false;
         for (int index = 0; index < invoices.Count; index++)
         {
             (string name, byte[] xml) = invoices[index];
+            if (stop is not null)
+            {
+                results.Add(NotSent(index, name, session.Reference, stop));
+                continue;
+            }
             while (true)
             {
                 try
@@ -189,7 +206,34 @@ public static class SendCommand
                     // Ta faktura i następne idą w nowej sesji; każdy wynik ma swój numer sesji (do UPO).
                     reopens++;
                     CliIo.Error($"sesja {session.Reference} tymczasowo niedostępna (KSeF {SessionTemporarilyUnavailable}) — wysyłam dalej w nowej sesji.");
-                    session = await OpenSessionAsync(ksef, crypto, tokens, cancellationToken);
+                    try
+                    {
+                        session = await OpenSessionAsync(ksef, crypto, tokens, cancellationToken);
+                    }
+                    catch (Exception open) when (!cancellationToken.IsCancellationRequested && CliErrors.Describe(open) is { } message)
+                    {
+                        // Bez sesji nie wyślemy nic więcej, ale już przyjęte faktury dalej sprawdzamy i podajemy.
+                        stop = $"nie wysłano — nie udało się otworzyć nowej sesji: {message}";
+                        results.Add(NotSent(index, name, session.Reference, stop));
+                        break;
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        // KSeF tej faktury nie przyjął (21184), a nowej sesji już nie ma.
+                        interrupted = true;
+                        stop = "nie wysłano — przerwano";
+                        results.Add(NotSent(index, name, session.Reference, stop));
+                        break;
+                    }
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    // Przerwane w trakcie wysyłki tej faktury: mogła dotrzeć do KSeF.
+                    interrupted = true;
+                    stop = "nie wysłano — przerwano";
+                    results.Add(Uncertain(index, name, session.Reference, null,
+                        "przerwano w trakcie wysyłki — faktura mogła trafić do KSeF; sprawdź przed ponowną wysyłką"));
+                    break;
                 }
                 catch (Exception ex) when (IsResponseLost(ex) && CliErrors.Describe(ex) is { } message)
                 {
@@ -204,12 +248,66 @@ public static class SendCommand
             }
         }
 
-        // Zamiast zgadywać: faktura jest w sesji, jeśli KSeF zna jej skrót. Inaczej ponowna wysyłka po zmianie
-        // numeru faktury (P_2) dałaby duplikat, którego KSeF już nie wykryje.
+        if (interrupted)
+        {
+            // Po przerwaniu nie czekamy na statusy — ale numery referencyjne wysłanych faktur muszą wyjść,
+            // bo faktury mogą być już wystawione.
+            foreach ((int index, string name, string sessionReference, string reference) in sent)
+            {
+                results.Add(Uncertain(index, name, sessionReference, reference, "przerwano przed numerem KSeF — faktura jest w KSeF; sprawdź jej status"));
+            }
+            foreach ((int index, string name, string sessionReference, _, _, string message) in unknown)
+            {
+                results.Add(Uncertain(index, name, sessionReference, null, $"przerwano; odpowiedź KSeF nie dotarła ({message})"));
+            }
+        }
+        else
+        {
+            await ResolveUnknownAsync(ksef, tokens, unknown, sent, used, results, cancellationToken);
+            await AddStatusesAsync(ksef, tokens, sent, results, cancellationToken);
+        }
+
+        // Zamknięcie sesji uruchamia generowanie UPO. Sesję bez wysłanych faktur KSeF zamyka sam.
+        // Własny limit czasu: po przerwaniu proces ma tylko chwilę na zakończenie.
+        using CancellationTokenSource closing = new(interrupted ? TimeSpan.FromSeconds(5) : TimeSpan.FromMinutes(1));
+        foreach (string sessionReference in used)
+        {
+            try
+            {
+                await ksef.CloseOnlineSessionAsync(sessionReference, await tokens.GetAsync(closing.Token), closing.Token);
+            }
+            catch (Exception ex) when (ex is OperationCanceledException || CliErrors.Describe(ex) is not null)
+            {
+                // KSeF zamyka nieużywaną sesję sam; wyniki faktur są ważne niezależnie od tego.
+                string message = CliErrors.Describe(ex) ?? "przekroczono czas";
+                CliIo.Error($"sesja {sessionReference}: nie udało się jej zamknąć ({message}) — UPO pojawi się po jej wygaśnięciu.");
+            }
+        }
+
+        // Kolejność wyników jak kolejność plików na wejściu.
+        return new SendOutcome([.. results.OrderBy(r => r.Index)], interrupted || cancellationToken.IsCancellationRequested);
+    }
+
+    // Zamiast zgadywać: faktura jest w sesji, jeśli KSeF zna jej skrót. Inaczej ponowna wysyłka po zmianie
+    // numeru faktury (P_2) dałaby duplikat, którego KSeF już nie wykryje.
+    private static async Task ResolveUnknownAsync(
+        IKSeFClient ksef, AccessTokenProvider tokens,
+        List<(int Index, string Name, string Session, byte[] Xml, Exception Error, string Message)> unknown,
+        List<(int Index, string Name, string Session, string Reference)> sent, HashSet<string> used,
+        List<SendResult> results, CancellationToken cancellationToken)
+    {
         foreach (var group in unknown.GroupBy(u => u.Session, StringComparer.Ordinal))
         {
-            Dictionary<string, string> inSession = await InvoicesInSessionAsync(ksef, tokens, group.Key, cancellationToken);
-            foreach ((int index, string name, string sessionReference, byte[] xml, Exception error, string message) in group)
+            Dictionary<string, string> inSession;
+            try
+            {
+                inSession = await InvoicesInSessionAsync(ksef, tokens, group.Key, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                inSession = [];
+            }
+            foreach ((int index, string name, string sessionReference, byte[] xml, _, string message) in group)
             {
                 if (inSession.TryGetValue(Convert.ToBase64String(SHA256.HashData(xml)), out string? reference))
                 {
@@ -219,11 +317,20 @@ public static class SendCommand
                 }
                 else
                 {
-                    results.Add(Failed(index, name, sessionReference, null, error, message));
+                    // Nie widać jej w sesji, ale lista sesji bywa opóźniona — to nie jest pewne odrzucenie.
+                    used.Add(sessionReference);
+                    results.Add(Uncertain(index, name, sessionReference, null,
+                        $"odpowiedź KSeF nie dotarła ({message}) i faktury nie widać w sesji — mogła zostać przyjęta; "
+                        + "przed ponowną wysyłką sprawdź: ksef list --subject seller --date-type invoicing"));
                 }
             }
         }
+    }
 
+    private static async Task AddStatusesAsync(
+        IKSeFClient ksef, AccessTokenProvider tokens, List<(int Index, string Name, string Session, string Reference)> sent,
+        List<SendResult> results, CancellationToken cancellationToken)
+    {
         foreach ((int index, string name, string sessionReference, string reference) in sent)
         {
             try
@@ -234,29 +341,16 @@ public static class SendCommand
                     status.Status.Code == Accepted ? status.KsefNumber : null,
                     status.Status.Code, null, status.Status.Description, [.. status.Status.Details ?? []], status.Status.Extensions));
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                results.Add(Uncertain(index, name, sessionReference, reference, "przerwano przed numerem KSeF — faktura jest w KSeF; sprawdź jej status"));
+            }
             catch (Exception ex) when (CliErrors.Describe(ex) is { } message)
             {
                 // Faktura wysłana, ale statusu nie znamy — numer referencyjny pozwala sprawdzić ją później.
-                results.Add(Failed(index, name, sessionReference, reference, ex, $"brak statusu faktury {reference}: {message}"));
+                results.Add(Uncertain(index, name, sessionReference, reference, $"brak statusu faktury {reference}: {message}"));
             }
         }
-
-        // Zamknięcie sesji uruchamia generowanie UPO. Sesję bez wysłanych faktur KSeF zamyka sam.
-        foreach (string sessionReference in used)
-        {
-            try
-            {
-                await ksef.CloseOnlineSessionAsync(sessionReference, await tokens.GetAsync(CancellationToken.None), CancellationToken.None);
-            }
-            catch (Exception ex) when (CliErrors.Describe(ex) is { } message)
-            {
-                // KSeF zamyka nieużywaną sesję sam; wyniki faktur są ważne niezależnie od tego.
-                CliIo.Error($"sesja {sessionReference}: nie udało się jej zamknąć ({message}) — UPO pojawi się po jej wygaśnięciu.");
-            }
-        }
-
-        // Kolejność wyników jak kolejność plików na wejściu.
-        return [.. results.OrderBy(r => r.Index)];
     }
 
     // Dzień przyjęcia faktury liczy KSeF, czyli czas polski — niezależnie od strefy tej maszyny.
@@ -335,13 +429,23 @@ public static class SendCommand
             .Build();
     }
 
-    // Sieć, limit czasu albo urwana odpowiedź 2xx (biblioteka MF zgłasza ją jako KsefApiException bez kodu KSeF):
-    // nie wiadomo, czy KSeF fakturę przyjął. Błąd z kodem KSeF albo statusem HTTP 4xx/5xx to pewne odrzucenie.
+    // Sieć, limit czasu, urwana odpowiedź 2xx (biblioteka MF zgłasza ją jako KsefApiException bez kodu KSeF)
+    // albo 408/5xx bez kodu KSeF (np. 504 od bramy, gdy KSeF jeszcze przetwarzał): nie wiadomo, czy fakturę przyjął.
+    // Pewne odrzucenie to tylko błąd z kodem KSeF albo inny 4xx.
     private static bool IsResponseLost(Exception ex) =>
         ex is not KsefApiException api
-        || (KsefCode(api) is null && api.StatusCode is >= System.Net.HttpStatusCode.OK and < System.Net.HttpStatusCode.MultipleChoices);
+        || (KsefCode(api) is null && api.StatusCode is (>= System.Net.HttpStatusCode.OK and < System.Net.HttpStatusCode.MultipleChoices)
+            or System.Net.HttpStatusCode.RequestTimeout or >= System.Net.HttpStatusCode.InternalServerError);
 
     private static int? KsefCode(KsefApiException? ex) => ex?.ErrorResponse?.Exception?.ExceptionDetailList?.FirstOrDefault()?.ExceptionCode;
+
+    /// <summary>Faktury nie wysłano wcale (sesji nie da się otworzyć, przerwano przed nią) — można ją wysłać ponownie.</summary>
+    private static SendResult NotSent(int index, string name, string sessionReference, string reason) =>
+        new(index, name, sessionReference, null, null, null, null, reason, null, null);
+
+    /// <summary>Nie wiadomo, czy KSeF fakturę przyjął — ponowna wysyłka może dać duplikat; przed nią trzeba sprawdzić.</summary>
+    private static SendResult Uncertain(int index, string name, string sessionReference, string? invoiceReference, string reason) =>
+        new(index, name, sessionReference, invoiceReference, null, null, null, reason, null, null) { StatusUnknown = true };
 
     /// <summary>Wynik dla faktury, której nie przyjęto przez błąd żądania: kod KSeF z treści błędu, osobno status HTTP.</summary>
     private static SendResult Failed(int index, string name, string sessionReference, string? invoiceReference, Exception ex, string message)

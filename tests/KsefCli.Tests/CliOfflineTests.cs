@@ -558,6 +558,20 @@ public class CliOfflineTests : IDisposable
         Assert.Contains("Brak sesji w środowisku prod (PRODUKCJA, prawdziwe faktury). Zaloguj się: ksef -e prod login", prod.Stderr);
     }
 
+    [Theory]
+    [InlineData("https://api.ksef.example.com")]
+    [InlineData("http://10.0.0.5:8080")]
+    [InlineData("nie-adres")]
+    public async Task KsefApiUrl_OutsideThisMachine_IsRejectedBeforeAnything(string url)
+    {
+        FakeKsef.WriteLoginSession(dir.Path, "1234563218", "prod");
+
+        CliResult result = await Ksef.RunAsync(dir.Path, null, new Dictionary<string, string> { ["KSEF_API_URL"] = url }, "-e", "prod", "list");
+
+        AssertCleanError(result);
+        Assert.Contains("KSEF_API_URL wskazuje poza ten komputer", result.Stderr);
+    }
+
     [Fact]
     public async Task UnknownEnvironment_IsRejected()
     {

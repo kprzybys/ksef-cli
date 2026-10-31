@@ -34,8 +34,19 @@ root.Subcommands.Add(SendCommand.Create(envOption));
 root.Subcommands.Add(GetCommand.Create(envOption));
 root.Subcommands.Add(UpoCommand.Create(envOption));
 
+// KSEF_API_URL to furtka dla symulatora KSeF w testach: tylko na ten komputer, inaczej zapomniana albo podstawiona
+// zmienna wysłałaby token (także produkcyjny) i faktury na obcy serwer.
+if (Environment.GetEnvironmentVariable(KsefEnvironment.ApiUrlVariable) is { Length: > 0 } apiUrl
+    && !(Uri.TryCreate(apiUrl, UriKind.Absolute, out Uri? api) && api.IsLoopback))
+{
+    CliIo.Error($"{KsefEnvironment.ApiUrlVariable} wskazuje poza ten komputer — dozwolony tylko lokalny symulator KSeF (np. http://127.0.0.1:…). Usuń zmienną: unset {KsefEnvironment.ApiUrlVariable}");
+    return 1;
+}
+
 // Własna obsługa błędów zamiast domyślnej: zrzut stosu tylko dla błędów programu (CliErrors).
-InvocationConfiguration invocation = new() { EnableDefaultExceptionHandler = false };
+// Po Ctrl+C/SIGTERM `send` potrzebuje chwili, żeby wypisać numery już wysłanych faktur i zamknąć sesje
+// (domyślnie System.CommandLine kończy proces po 2 s).
+InvocationConfiguration invocation = new() { EnableDefaultExceptionHandler = false, ProcessTerminationTimeout = TimeSpan.FromSeconds(15) };
 try
 {
     return await root.Parse(args).InvokeAsync(invocation);

@@ -7,7 +7,7 @@ namespace Ksef.Fa3;
 
 /// <summary>
 /// Wymagania KSeF wobec pliku faktury, których nie sprawdza XSD
-/// (ksef-api: faktury/weryfikacja-faktury.md): UTF-8 bez BOM, prolog bez innego kodowania,
+/// (https://github.com/CIRFMF/ksef-api/blob/main/faktury/weryfikacja-faktury.md): UTF-8 bez BOM, prolog bez innego kodowania,
 /// brak instrukcji przetwarzania, brak niezalecanych znaków Unicode, limit rozmiaru, sumy kontrolne NIP
 /// (te KSeF sprawdza tylko na produkcji — na TEST faktura z błędnym NIP-em przechodzi).
 /// </summary>

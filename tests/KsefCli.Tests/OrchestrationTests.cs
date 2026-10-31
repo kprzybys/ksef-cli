@@ -213,7 +213,97 @@ public class SendOrchestrationTests
 
         Assert.Equal(1, result.ExitCode);
         Assert.Equal($"{KsefNumber(2)}\t{files[1]}\t{Session}\n", result.Stdout);
-        Assert.Contains($"{files[0]}: brak statusu faktury {InvoiceReference(1)}", result.Stderr);
+        Assert.Contains($"{files[0]}: STATUS NIEZNANY: brak statusu faktury {InvoiceReference(1)}", result.Stderr);
+    }
+
+    [Fact]
+    public async Task Send_NewSessionCannotOpen_KeepsAcceptedAndMarksRestNotSent()
+    {
+        // Po 21184 nowa sesja się nie otwiera: faktura 1 jest już wystawiona — jej numer musi wyjść,
+        // 2 i 3 nie poszły wcale (można je wysłać ponownie), a pierwsza sesja i tak jest zamykana.
+        using FakeKsef ksef = OnlineSession(invoice: n => n == 2 ? FakeResponse.Error(400, 21184, "Sesja tymczasowo niedostępna") : null);
+        ksef.OnSequence("POST", "sessions/online",
+            FakeResponse.Json(new { referenceNumber = Session, validUntil = DateTimeOffset.UtcNow.AddHours(12) }),
+            new FakeResponse(503));
+        (TempDir dir, string[] files) = Invoices(3);
+        using TempDir _ = dir;
+
+        CliResult result = await ksef.RunAsync(dir.Path, ["send", .. files]);
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Equal($"{KsefNumber(1)}\t{files[0]}\t{Session}\n", result.Stdout);
+        Assert.Contains($"{files[1]}: nie wysłano — nie udało się otworzyć nowej sesji", result.Stderr);
+        Assert.Contains($"{files[2]}: nie wysłano — nie udało się otworzyć nowej sesji", result.Stderr);
+        Assert.DoesNotContain("STATUS NIEZNANY", result.Stderr);
+        Assert.Single(ksef.RequestsTo("POST", $"sessions/online/{Session}/close"));
+    }
+
+    [Fact]
+    public async Task Send_GatewayTimeoutWithoutKsefCode_ChecksSessionByHash()
+    {
+        // 504 od bramy bez kodu KSeF to nie odrzucenie: faktura mogła zostać przyjęta — ksef szuka jej po skrócie.
+        using FakeKsef ksef = OnlineSession(invoice: n => n == 1 ? new FakeResponse(504, "<html>Gateway Timeout</html>", "text/html") : null);
+        (TempDir dir, string[] files) = Invoices(1);
+        using TempDir _ = dir;
+        string hash = Convert.ToBase64String(SHA256.HashData(File.ReadAllBytes(files[0])));
+        ksef.On("GET", $"sessions/{Session}/invoices", (_, _) => FakeResponse.Json(new
+        {
+            invoices = new[] { new { ordinalNumber = 1, referenceNumber = InvoiceReference(1), invoiceHash = hash, invoicingDate = DateTimeOffset.UtcNow, status = new { code = 100, description = "W trakcie" } } },
+        }));
+
+        CliResult result = await ksef.RunAsync(dir.Path, ["send", .. files]);
+
+        Assert.True(result.ExitCode == 0, result.Stderr);
+        Assert.Equal($"{KsefNumber(1)}\t{files[0]}\t{Session}\n", result.Stdout);
+    }
+
+    [Fact]
+    public async Task Send_ResponseLostAndNotInSession_IsReportedAsUnknownNotRejected()
+    {
+        // Odpowiedź nie dotarła, a lista sesji (bywa opóźniona) faktury nie pokazuje: to nie jest pewne odrzucenie —
+        // komunikat i JSON mówią „status nieznany, sprawdź przed ponowną wysyłką”.
+        using FakeKsef ksef = OnlineSession(invoice: _ => FakeResponse.Abort);
+        ksef.On("GET", $"sessions/{Session}/invoices", (_, _) => FakeResponse.Json(new { invoices = Array.Empty<object>() }));
+        (TempDir dir, string[] files) = Invoices(1);
+        using TempDir _ = dir;
+
+        CliResult text = await ksef.RunAsync(dir.Path, ["send", .. files]);
+        CliResult json = await ksef.RunAsync(dir.Path, ["send", "--json", .. files]);
+
+        Assert.Equal(1, text.ExitCode);
+        Assert.Empty(text.StdoutBytes);
+        Assert.Contains($"{files[0]}: STATUS NIEZNANY: odpowiedź KSeF nie dotarła", text.Stderr);
+        Assert.Contains("ksef list --subject seller --date-type invoicing", text.Stderr);
+        JsonNode result = JsonNode.Parse(json.Stdout)!.AsArray().Single()!;
+        Assert.True((bool?)result["statusUnknown"]);
+        Assert.Null(result["ksefNumber"]);
+    }
+
+    [Fact]
+    public async Task Send_Interrupted_ReportsAlreadySentInvoicesAndClosesSession()
+    {
+        // Ctrl+C / timeout w cronie w trakcie wysyłki faktury 2: faktura 1 już jest w KSeF — jej numer referencyjny
+        // musi wyjść, 2 mogła dotrzeć (status nieznany), 3 nie poszła; sesja zamknięta, kod 130.
+        using FakeKsef ksef = OnlineSession(invoice: n =>
+        {
+            if (n == 2)
+            {
+                Thread.Sleep(TimeSpan.FromSeconds(20));
+            }
+            return null;
+        });
+        (TempDir dir, string[] files) = Invoices(3);
+        using TempDir _ = dir;
+        string command = $"timeout --preserve-status -s INT 4 {Ksef.CommandLine} send {string.Join(' ', files)}";
+
+        CliResult result = await Ksef.RunShellAsync(dir.Path, command, new Dictionary<string, string> { ["KSEF_API_URL"] = ksef.Url });
+
+        Assert.Equal(130, result.ExitCode);
+        Assert.Empty(result.StdoutBytes);
+        Assert.Contains($"{files[0]}: STATUS NIEZNANY: przerwano przed numerem KSeF — faktura jest w KSeF; sprawdź jej status (numer referencyjny {InvoiceReference(1)}, sesja {Session})", result.Stderr);
+        Assert.Contains($"{files[1]}: STATUS NIEZNANY: przerwano w trakcie wysyłki", result.Stderr);
+        Assert.Contains($"{files[2]}: nie wysłano — przerwano", result.Stderr);
+        Assert.Single(ksef.RequestsTo("POST", $"sessions/online/{Session}/close"));
     }
 
     [Fact]

@@ -48,9 +48,10 @@ internal static class Ksef
         }
         start.Environment["XDG_RUNTIME_DIR"] = runtimeDir;
         start.Environment["DOTNET_CLI_UI_LANGUAGE"] = "pl";
-        // KSEF_ENV z powłoki uruchamiającej testy (np. =prod w ~/.bashrc) skierowałby testy E2E na produkcję;
-        // test, który jej potrzebuje, podaje ją jawnie w `environment`.
+        // KSEF_ENV/KSEF_API_URL z powłoki uruchamiającej testy (np. KSEF_ENV=prod w ~/.bashrc) skierowałyby testy
+        // na produkcję albo obcy adres; test, który ich potrzebuje, podaje je jawnie w `environment`.
         start.Environment.Remove("KSEF_ENV");
+        start.Environment.Remove("KSEF_API_URL");
         foreach ((string name, string value) in environment ?? new Dictionary<string, string>())
         {
             start.Environment[name] = value;
@@ -74,6 +75,37 @@ internal static class Ksef
     }
 
     public static Task<CliResult> RunAsync(string runtimeDir, params string[] args) => RunAsync(runtimeDir, null, args);
+
+    /// <summary>Wiersz powłoki z `ksef` w środku (np. `timeout -s INT …`) — do testów sygnałów; to samo środowisko co RunAsync.</summary>
+    public static async Task<CliResult> RunShellAsync(string runtimeDir, string command, IReadOnlyDictionary<string, string>? environment = null)
+    {
+        ProcessStartInfo start = new("bash")
+        {
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        start.ArgumentList.Add("-c");
+        start.ArgumentList.Add(command);
+        start.Environment["XDG_RUNTIME_DIR"] = runtimeDir;
+        start.Environment["DOTNET_CLI_UI_LANGUAGE"] = "pl";
+        start.Environment.Remove("KSEF_ENV");
+        start.Environment.Remove("KSEF_API_URL");
+        foreach ((string name, string value) in environment ?? new Dictionary<string, string>())
+        {
+            start.Environment[name] = value;
+        }
+
+        using Process process = Process.Start(start) ?? throw new InvalidOperationException("Nie uruchomiono bash.");
+        process.StandardInput.Close();
+        Task<string> stderr = process.StandardError.ReadToEndAsync();
+        using MemoryStream stdout = new();
+        await process.StandardOutput.BaseStream.CopyToAsync(stdout);
+        using CancellationTokenSource timeout = new(TimeSpan.FromMinutes(1));
+        await process.WaitForExitAsync(timeout.Token);
+        return new CliResult(process.ExitCode, stdout.ToArray(), await stderr);
+    }
 }
 
 /// <summary>Katalog tymczasowy usuwany po teście.</summary>
