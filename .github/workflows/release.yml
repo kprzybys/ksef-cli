@@ -1,6 +1,6 @@
 # Wydanie: tag v* → binarki Native AOT linux-x64 i linux-arm64, zbudowane w kontenerze AlmaLinux 9
 # (scripts/release-build.sh, glibc 2.34), sprawdzone w czystych kontenerach dystrybucji (scripts/test-distros.sh)
-# i dołączone do SZKICU wydania na GitHubie — publikuje człowiek po przejrzeniu.
+# i dołączone do SZKICU wydania na GitHubie z atestacją pochodzenia — publikuje człowiek po przejrzeniu.
 # Ręczne uruchomienie (workflow_dispatch) tylko buduje i testuje, bez wydania.
 name: Release
 
@@ -46,14 +46,17 @@ jobs:
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: write
+      # Atestacja pochodzenia binarek (Sigstore): podpis tokenem OIDC tego przebiegu.
+      id-token: write
+      attestations: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           # Bez zagnieżdżonego ksef-pdf-generator w bibliotece MF; pełna historia dla git describe.
           submodules: true
           fetch-depth: 0
       # SDK w kontenerze wydania = to SDK (release-build.sh bierze `dotnet --version`), jak w CI.
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
         with:
           global-json-file: global.json
       - name: Budowanie (kontener AlmaLinux 9)
@@ -70,6 +73,13 @@ jobs:
           scripts/test-distros.sh dist/release/ksef-*-linux-${{ matrix.arch }}/ksef ${{ matrix.images }} | tee dist/distros.md
           cat dist/distros.md >> "$GITHUB_STEP_SUMMARY"
           ! grep -q "BŁĄD" dist/distros.md
+      # Każdy może sprawdzić, że archiwum zbudował ten workflow z tego repo:
+      #   gh attestation verify ksef-<wersja>-linux-<arch>.tar.gz --repo kprzybys/ksef-cli
+      - name: Atestacja pochodzenia
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f  # v3.2.0
+        with:
+          subject-path: dist/release/*.tar.gz
       - name: Dołączenie do szkicu wydania
         if: startsWith(github.ref, 'refs/tags/v')
         env:

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Luka bezpieczeństwa
+    url: https://github.com/kprzybys/ksef-cli/security/advisories/new
+    about: Zgłoś prywatnie, nie w publicznym zgłoszeniu.
+  - name: Błąd w bibliotece MF albo w samym KSeF
+    url: https://github.com/CIRFMF/ksef-client-csharp/issues
+    about: Biblioteka klienta KSeF Ministerstwa Finansów.

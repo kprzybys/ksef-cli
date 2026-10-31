@@ -1,0 +1,30 @@
+# Aktualizacje zależności: PR raz w tygodniu, drobne podbicia zgrupowane w jeden PR na ekosystem.
+version: 2
+updates:
+  # Akcje są przypięte do SHA (z wersją w komentarzu) — Dependabot podbija oba.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # Nasze projekty i narzędzia (dotnet-tools.json); biblioteka MF (external/) idzie osobno, jako submoduł.
+  - package-ecosystem: nuget
+    directories:
+      - /
+      - /src/*
+      - /tests/*
+    schedule:
+      interval: weekly
+    groups:
+      nuget-minor:
+        update-types: [minor, patch]
+
+  # Biblioteka MF (external/ksef-client-csharp): PR, gdy na jej gałęzi głównej pojawi się nowy commit.
+  # Przed scaleniem: czy to wydanie (tag), make check, make test-aot, notatki zmian MF.
+  - package-ecosystem: gitsubmodule
+    directory: /
+    schedule:
+      interval: weekly
