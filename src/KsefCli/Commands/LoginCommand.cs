@@ -60,7 +60,7 @@ public static partial class LoginCommand
             Description = "Wyślij żądanie z --request podpisane innym programem (XAdES); `-` = stdin",
         };
 
-        Command command = new("login", "Logowanie do KSeF certyfikatem (XAdES), tokenem KSeF albo żądaniem podpisanym innym programem; sesja trafia do $XDG_RUNTIME_DIR/ksef");
+        Command command = new("login", "Logowanie do KSeF certyfikatem (XAdES), tokenem KSeF albo żądaniem podpisanym innym programem; sesja trafia do " + (OperatingSystem.IsMacOS() ? "$TMPDIR/ksef" : "$XDG_RUNTIME_DIR/ksef"));
         command.Options.Add(nipOption);
         command.Options.Add(certOption);
         command.Options.Add(tokenOption);

@@ -77,6 +77,8 @@ ksef --help
   od razu; pobrana przeglądarką dostaje znacznik kwarantanny i macOS jej nie otworzy — wtedy
   `xattr -d com.apple.quarantine ~/.local/bin/ksef`. Pochodzenie archiwum sprawdzisz tak samo jak na Linuksie
   (atestacja, [niżej](#instalacja-z-wydania)).
+- **zsh** (domyślna powłoka macOS) nie traktuje `#` w wierszu poleceń jako komentarza — przykłady z komentarzami
+  z tej dokumentacji wklejaj po `setopt interactivecomments` (na stałe: dopisz do `~/.zshrc`).
 - **Sesje** trzyma w `$TMPDIR/ksef/` (prywatny katalog użytkownika, prawa 0700) — macOS nie ma `$XDG_RUNTIME_DIR`.
 - **Klucz na karcie/tokenie (PKCS#11)** na razie tylko na Linuksie; na macOS logowanie certyfikatem z pliku,
   tokenem KSeF albo podpisem zewnętrznym (`--request`/`--signed`, np. Profil Zaufany).
