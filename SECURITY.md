@@ -4,7 +4,7 @@
 
 Podatności zgłaszaj prywatnie przez
 [GitHub Security Advisories](https://github.com/kprzybys/ksef-cli/security/advisories/new),
-nie w publicznych zgłoszeniach. Odpowiedź w ciągu kilku dni roboczych.
+nie w publicznych zgłoszeniach. Staram się odpowiadać w ciągu kilku dni roboczych.
 
 Nie dołączaj prawdziwych tokenów, certyfikatów, kluczy ani faktur — wystarczy opis i kroki na środowisku TEST.
 

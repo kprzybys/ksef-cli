@@ -37,7 +37,7 @@ oficjalnym `dotnet-install.sh` do `~/.dotnet` — bez sudo; trzeba dopisać `~/.
 ## Klucz na karcie lub tokenie (PKCS#11)
 
 Opcjonalnie, tylko dla logowania kluczem z karty, tokenu albo TPM (`ksef login --key pkcs11:…`, zob. sekcję
-„Logowanie” w [README](../README.md#logowanie)). Moduł karty ładuje p11-kit, a OpenSSL systemu — silnik (engine) albo provider PKCS#11;
+„Logowanie” w [docs/COMMANDS.md](COMMANDS.md#logowanie)). Moduł karty ładuje p11-kit, a OpenSSL systemu — silnik (engine) albo provider PKCS#11;
 zwykle nie trzeba nic konfigurować (opcjonalnie `PKCS11_PROVIDER_MODULE=/ścieżka/modułu.so`).
 
 ```bash
@@ -127,7 +127,7 @@ w minimalnym obrazie przed `install-deps.sh` (zwykle brakuje ICU); dalsze kolumn
 
 | Maszyna | System | glibc | Wynik |
 |---|---|---|---|
-| 2 laptopy | Linux Mint 22.1 / 22.3 | 2.39 | wszystko działa |
+| maszyny fizyczne | Linux Mint 22.1 / 22.3 | 2.39 | wszystko działa |
 | stacja robocza | Ubuntu 26.10 (libxml2.so.16, OpenSSL 4 obok 3) | 2.44 | wszystko działa |
 | VPS w kontenerze LXC | Ubuntu 22.04 | 2.35 | wszystko działa |
 | hosting współdzielony, bez sudo | RHEL 9 (el9_7) | 2.34 | wszystko działa |

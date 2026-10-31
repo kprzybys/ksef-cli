@@ -7,10 +7,16 @@ potoki, sekrety nigdy w argumentach.
 
 ## Przed pierwszą fakturą produkcyjną
 
-- [ ] Próba na DEMO prawdziwym środkiem uwierzytelnienia (podpis kwalifikowany, pieczęć, Profil Zaufany) —
+- [x] Logowanie Profilem Zaufanym (`--request`/`--signed`) na DEMO — sprawdzone ręcznie 2026-10-31.
+- [ ] DEMO: podpis kwalifikowany i pieczęć; pełny obieg send/upo/get na DEMO z prawdziwymi uprawnieniami —
   samopodpisane certyfikaty działają tylko na TEST, a DEMO/PROD mają zaostrzoną walidację XAdES.
 
 ## Priorytet wysoki
+
+- [ ] `logout`: usunąć sesję lokalnie także wtedy, gdy KSeF odrzuci unieważnienie (token już unieważniony).
+- [ ] `list`: daty bez godziny w czasie polskim (jak w `send`), nie w strefie maszyny — cron na serwerze w UTC.
+- [ ] `get` i `upo`: błąd sieci przy jednej pozycji nie przerywa całej partii (dziś tylko błędy KSeF są per pozycja).
+- [ ] Ostrzeżenie, gdy `--token-file`/`--pin-file` jest czytelny dla innych; pliki faktur i UPO z prawami 0600.
 
 - [ ] `ksef export --state PLIK` — eksport asynchroniczny (paczki ZIP) z przyrostowym pobieraniem od HWM i jawnym
   plikiem stanu; wynik do potoku (`| ksef get`). MF zaleca eksport zamiast serii pojedynczych pobrań (limit 64/h).
@@ -38,7 +44,14 @@ potoki, sekrety nigdy w argumentach.
 - [ ] Uprawnienia (np. nadanie biuru rachunkowemu), limity API, dane testowe (tylko TEST).
 - [ ] `cert verify` — kontrola certyfikatu i klucza (próbny podpis, w tym KOD II).
 
-## Zrobione po 0.1
+## Zrobione w 0.1.2
+
+- [x] `send` nie gubi numerów już wysłanych faktur: gdy po 21184 nie da się otworzyć nowej sesji, po Ctrl+C/SIGTERM
+  (kod 130) i przy błędzie bramy 408/5xx bez kodu KSeF (szukanie w sesji po skrócie). Faktura, której stanu nie da
+  się ustalić, ma „STATUS NIEZNANY” i `statusUnknown` w `--json` — nie wygląda jak odrzucenie.
+- [x] `KSEF_API_URL` (symulator w testach) tylko na ten komputer — token nie poleci na obcy serwer.
+
+## Zrobione w 0.1.1
 
 - [x] Zmienna `KSEF_ENV` (odpowiednik `-e`) i pierwsze uruchomienie bez dokumentacji: `ksef` bez komendy opisuje
   środowiska, komunikaty mówią po ludzku, co znaczy test/demo/prod, podpowiedź przy tokenie z innego środowiska (450)
@@ -50,5 +63,5 @@ Keyring i profile (sekrety z menedżera przez stdin), wbudowany PDF (`show` + pr
 tryb `--watch` i powiadomienia (cron/systemd + potoki), serwer MCP. Do ponownej oceny, jeśli pojawi się
 realna potrzeba użytkowników.
 
-Szczegóły i źródła: przegląd wymagań MF oraz porównanie z go-ksef-cli, ksef2-cli, ksef-client-python,
-ksef-client-ts, ksefcli, ksefuj i ksefctl (raporty projektu, 2026-10-31).
+Plan powstał na podstawie dokumentacji API KSeF 2.0 MF ([CIRFMF/ksef-api](https://github.com/CIRFMF/ksef-api))
+i porównania z innymi publicznymi narzędziami KSeF (stan 2026-10-31).

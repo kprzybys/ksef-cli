@@ -13,7 +13,7 @@ Budowanie ze źródeł, Native AOT, model FA(3), testy i bramka jakości. Instal
 ## Budowanie
 
 ```bash
-git clone --recurse-submodules=external/ksef-client-csharp <repo>   # albo: git submodule update --init external/ksef-client-csharp
+git clone --recurse-submodules=external/ksef-client-csharp https://github.com/kprzybys/ksef-cli.git   # albo: git submodule update --init external/ksef-client-csharp
 dotnet build src/KsefCli -c Release
 src/KsefCli/bin/Release/net10.0/ksef --help
 ```
@@ -60,7 +60,7 @@ nie trzeba pobierać.
   a pliki wbudowane w `Ksef.Fa3.dll` — walidacja i podgląd nie sięgają do sieci.
 - `src/Ksef.Fa3/` — klasy C# wygenerowane ze schematu (`scripts/generate-fa3.sh`, narzędzie
   `dotnet-xscgen` z `dotnet-tools.json`), walidator XSD (`Fa3Schema`),
-  wymagania KSeF ponad XSD (`KsefDocumentRules`, wg `ksef-api/faktury/weryfikacja-faktury.md`),
+  wymagania KSeF ponad XSD (`KsefDocumentRules`, wg [dokumentacji MF: weryfikacja faktury](https://github.com/CIRFMF/ksef-api/blob/main/faktury/weryfikacja-faktury.md)),
   oba naraz (`Fa3Validator`), podgląd HTML (`Fa3Html`, libxslt) i odczyt/zapis (`Fa3Serializer`). Katalogu `Generated/` nie edytujemy ręcznie.
 - Nowa wersja schematu: `scripts/fetch-fa3-schemas.py <URL> && scripts/generate-fa3.sh`, potem testy.
 
@@ -84,7 +84,7 @@ make test-aot                                    # testy CLI z E2E na binarce Na
 - `KsefCli.Tests` uruchamiają zbudowany `ksef` jako proces (stdout/stderr, kody wyjścia, stdin, prawa plików,
   odmowa wypisania klucza na terminal przez `script`) oraz sprawdzają NIP i magazyn sesji, w tym odświeżanie tokenu.
 - Przebiegi `send`/`get`/`upo` bez sieci: `ksef` rozmawia przez bibliotekę MF z lokalnym fałszywym KSeF
-  (`tests/KsefCli.Tests/FakeKsef.cs`, adres podany w `KSEF_API_URL`). Fałszywy serwer odszyfrowuje wysłane faktury
+  (`tests/KsefCli.Tests/FakeKsef.cs`, adres podany w `KSEF_API_URL` — `ksef` przyjmuje tylko adres na tym komputerze, np. `http://127.0.0.1:…`). Fałszywy serwer odszyfrowuje wysłane faktury
   i porównuje je z plikami, a do tego zrywa połączenie w połowie wysyłki, odrzuca faktury (440 z numerem oryginału),
   zwraca limity 429, „faktura jeszcze niedostępna” (21165), „nie znaleziono UPO” (21178), sesje otwarte i bez UPO
   oraz niebezpieczne numery stron UPO.

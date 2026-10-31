@@ -2,6 +2,7 @@
 
 **Krajowy System e-Faktur z wiersza poleceń.** Wysyłanie, odbieranie, walidacja i podgląd faktur FA(3)
 w KSeF 2.0 — na oficjalnej bibliotece Ministerstwa Finansów, w jednej natywnej binarce dla Linuksa.
+`ksef` przenosi gotowe pliki XML faktur między komputerem a KSeF — faktur nie tworzy i nie księguje.
 
 [![CI](https://github.com/kprzybys/ksef-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/kprzybys/ksef-cli/actions/workflows/ci.yml)
 [![Wydanie](https://img.shields.io/github/v/release/kprzybys/ksef-cli?label=wydanie)](https://github.com/kprzybys/ksef-cli/releases)
@@ -23,7 +24,7 @@ $ ksef show faktura.xml -e prod --ksef-number 1234563218-20261031-0A1B2C3D4E5F-6
   [`CIRFMF/ksef-client-csharp`](https://github.com/CIRFMF/ksef-client-csharp), budowana ze źródeł —
   nie własna, nieoficjalna implementacja API.
 - **Jedna binarka, bez .NET.** Native AOT, ok. 15 MB, start w ok. 15 ms. Działa na Ubuntu 22.04+,
-  Debianie 12+, RHEL/Alma 9+, Fedorze, Archu i openSUSE — x64 i arm64 (także Raspberry Pi).
+  Debianie 12+, RHEL/Alma 9+, Fedorze, Archu i openSUSE Tumbleweed — x64 i arm64 (także Raspberry Pi).
 - **Po uniksowemu.** Wynik na stdout, błędy na stderr, `-` to stdin/stdout, `--json` dla skryptów, stałe kody
   wyjścia, zero pytań interaktywnych — komendy łączą się w potoki i działają w cronie.
 - **Bezpiecznie.** Sekrety (token, PIN, klucz) nigdy w argumentach wywołania; logowanie certyfikatem,
@@ -36,7 +37,7 @@ $ ksef show faktura.xml -e prod --ksef-number 1234563218-20261031-0A1B2C3D4E5F-6
 
 ```bash
 # 1. Instalacja (x64; dla arm64: linux-arm64)
-v=0.1.1 a=linux-x64
+v=0.1.2 a=linux-x64
 curl -LO https://github.com/kprzybys/ksef-cli/releases/download/v$v/ksef-$v-$a.tar.gz{,.sha256}
 sha256sum -c ksef-$v-$a.tar.gz.sha256 && tar -xzf ksef-$v-$a.tar.gz
 install -Dm755 ksef-$v-$a/ksef ~/.local/bin/ksef
@@ -51,6 +52,16 @@ ksef validate faktura.xml                    # cisza = poprawna
 ksef send faktura.xml                        # numer KSeF, plik, numer sesji
 ksef list --subject seller                   # faktury wystawione (domyślnie: otrzymane)
 ```
+
+Z prawdziwą firmą — token wygenerowany w Aplikacji Podatnika KSeF (link na [ksef.podatki.gov.pl](https://ksef.podatki.gov.pl/)):
+
+```bash
+ksef -e prod login --nip <NIP> --token-file token.txt   # albo z menedżera haseł przez stdin: --token-file -
+ksef -e prod list                                       # odczyt jest bezpieczny
+ksef validate faktura.xml && ksef -e prod send faktura.xml   # UWAGA: wysłana = wystawiona, nie da się cofnąć
+```
+
+Wysyłkę najpierw przećwicz na `-e demo` (próba generalna MF, prawdziwe logowanie, faktury bez skutków prawnych).
 
 Domyślne środowisko to `test` (piaskownica MF, fikcyjne dane); prawdziwa firma tylko jawnie: `ksef -e prod …`
 albo `export KSEF_ENV=prod` — zob. [środowiska](docs/COMMANDS.md#środowiska). Samo `ksef` pokazuje pierwsze kroki.
@@ -76,7 +87,7 @@ Opcje, formaty wyjścia, kody wyjścia i wszystkie metody logowania: [docs/COMMA
 ## Przykłady
 
 ```bash
-ksef list | ksef get -d otrzymane/                           # tylko nowe faktury otrzymane
+ksef list | ksef get -d otrzymane/                           # otrzymane w tym miesiącu; już pobrane pomija
 ksef send faktury/*.xml | tee wyslane.tsv | ksef upo -d upo/ # wysyłka + UPO każdej faktury
 ksef list --subject seller --json | jq 'map(.grossAmount) | add'
 pass show ksef/token | ksef -e prod login --nip 1234563218 --token-file -
@@ -93,6 +104,8 @@ ksef show faktura.xml -e prod -k "$(cut -f1 wyslane.tsv)" -o faktura.html   # dl
   offline przekazywane poza KSeF; kod weryfikujący fakturę (KOD I) jest.
 - `validate` sprawdza schemat i wymagania techniczne KSeF, **nie** rachunki (sumy VAT) — tych nie sprawdza też KSeF.
 - Testy automatyczne (ponad 200, w tym na żywym środowisku TEST MF i na binarce AOT) nie obejmują DEMO ani produkcji.
+  Ręcznie sprawdzone: odczyt na produkcji (token KSeF) i logowanie Profilem Zaufanym na DEMO; podpis kwalifikowany
+  i pieczęć na DEMO/PROD — jeszcze nie.
 - Limity KSeF (np. 20 zapytań o metadane na godzinę) obowiązują — krótkie 429 `ksef` przeczekuje sam.
 
 ## Plany
