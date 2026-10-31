@@ -62,7 +62,8 @@ z tabel niżej; samo logowanie — na Ubuntu 24.04 (OpenSSL 3.0). arm64 nietesto
 ## macOS
 
 Od wersji 0.1.4: `ksef-<wersja>-osx-arm64.tar.gz` (Apple Silicon) i `osx-x64` (Intel). Wszystko, czego binarka
-potrzebuje (ICU, kryptografia, libxslt), jest w systemie — bez Homebrew i bez pakietów.
+potrzebuje (ICU, kryptografia, libxslt), jest w systemie — bez Homebrew i bez pakietów. Binarka deklaruje
+macOS 12 lub nowszy; testy przechodzą na macOS 15 (CI, oba procesory).
 
 ```bash
 v=0.1.4 a=osx-arm64   # Intel: osx-x64
