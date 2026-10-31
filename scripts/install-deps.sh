@@ -120,7 +120,11 @@ for package in "${packages[@]}"; do
 done
 
 command="${sudo[*]:+sudo }${install[*]} ${packages[*]}"
-dotnet_command='curl -sSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 10.0 && export PATH="$HOME/.dotnet:$PATH"'
+# Instalator .NET z przypiętej wersji (commit + SHA-256), nie „curl | bash” z ruchomego adresu dot.net/v1:
+# podmieniony skrypt nie zostanie uruchomiony. Nowsza wersja: commit z github.com/dotnet/install-scripts i jego skrót.
+dotnet_install_url=https://raw.githubusercontent.com/dotnet/install-scripts/e5cf1dd2d1540ed05ac84f8eb8c5cdec2807621e/src/dotnet-install.sh
+dotnet_install_sha256=082f7685e156738a1b2e2ed8381a621870d4ce8e8c59278034556f05c186eb2e
+dotnet_command="curl -fsSLo dotnet-install.sh $dotnet_install_url && echo '$dotnet_install_sha256  dotnet-install.sh' | sha256sum -c - && bash dotnet-install.sh --channel 10.0 && export PATH=\"\$HOME/.dotnet:\$PATH\""
 
 if [[ $apply != true ]]; then
     echo "$command"
@@ -132,6 +136,10 @@ fi
 
 "${sudo[@]}" "${install[@]}" "${packages[@]}"
 if [[ $dotnet_from_distro != true ]] && ! command -v dotnet >/dev/null; then
-    curl -sSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 10.0
+    installer=$(mktemp)
+    trap 'rm -f "$installer"' EXIT
+    curl -fsSL "$dotnet_install_url" -o "$installer"
+    echo "$dotnet_install_sha256  $installer" | sha256sum -c --quiet -
+    bash "$installer" --channel 10.0
     echo "install-deps: .NET SDK w ~/.dotnet — dopisz do PATH: export PATH=\"\$HOME/.dotnet:\$PATH\"" >&2
 fi
