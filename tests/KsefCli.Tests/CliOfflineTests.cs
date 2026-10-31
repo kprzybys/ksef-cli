@@ -184,7 +184,9 @@ public class CliOfflineTests : IDisposable
 
         Assert.Equal(0, result.ExitCode);
         using X509Certificate2 cert = X509Certificate2.CreateFromPem(result.Stdout, result.Stdout);
-        Assert.Contains("organizationIdentifier=VATPL-5908996669", cert.Subject);
+        // Po OID, nie po tekście Subject: macOS wypisuje go jako „OID.2.5.4.97=…”, Linux jako „organizationIdentifier=…”.
+        Assert.Contains(cert.SubjectName.EnumerateRelativeDistinguishedNames(),
+            rdn => rdn.GetSingleElementType().Value == "2.5.4.97" && rdn.GetSingleElementValue() == "VATPL-5908996669");
     }
 
     [Fact]
