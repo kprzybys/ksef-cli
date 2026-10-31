@@ -124,14 +124,14 @@ internal sealed class FakeKsef : IDisposable
     }
 
     /// <summary>Sesja logowania zapisana tak, jak zostawia ją `ksef login` — token ważny, bez odświeżania.</summary>
-    public static void WriteLoginSession(string runtimeDir, string nip)
+    public static void WriteLoginSession(string runtimeDir, string nip, string environment = "test")
     {
         string dir = Path.Combine(runtimeDir, "ksef");
         Directory.CreateDirectory(dir);
         DateTimeOffset until = DateTimeOffset.UtcNow.AddHours(1);
-        File.WriteAllText(Path.Combine(dir, $"test-{nip}.json"), JsonSerializer.Serialize(new
+        File.WriteAllText(Path.Combine(dir, $"{environment}-{nip}.json"), JsonSerializer.Serialize(new
         {
-            environment = "test",
+            environment,
             nip,
             referenceNumber = "20261030-AU-0000000000-0000000000-00",
             accessToken = new { token = AccessToken, validUntil = until },

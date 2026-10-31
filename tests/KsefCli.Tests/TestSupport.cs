@@ -48,6 +48,9 @@ internal static class Ksef
         }
         start.Environment["XDG_RUNTIME_DIR"] = runtimeDir;
         start.Environment["DOTNET_CLI_UI_LANGUAGE"] = "pl";
+        // KSEF_ENV z powłoki uruchamiającej testy (np. =prod w ~/.bashrc) skierowałby testy E2E na produkcję;
+        // test, który jej potrzebuje, podaje ją jawnie w `environment`.
+        start.Environment.Remove("KSEF_ENV");
         foreach ((string name, string value) in environment ?? new Dictionary<string, string>())
         {
             start.Environment[name] = value;

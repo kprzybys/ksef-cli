@@ -4,14 +4,24 @@ using KsefCli.Commands;
 
 Option<string> envOption = new("--env", "-e")
 {
-    Description = "Środowisko KSeF: test, demo, prod",
-    DefaultValueFactory = _ => "test",
+    Description = $"Środowisko KSeF: test (piaskownica), demo (próba), prod (prawdziwe faktury); domyślnie z ${KsefEnvironment.EnvVariable}, a bez niej test",
+    HelpName = string.Join('|', KsefEnvironment.Names),
+    DefaultValueFactory = _ => KsefEnvironment.DefaultName,
     Recursive = true,
 };
-envOption.AcceptOnlyFromAmong(KsefEnvironment.Names);
+envOption.Validators.Add(result =>
+{
+    string name = result.GetValueOrDefault<string>();
+    if (!KsefEnvironment.Names.Contains(name, StringComparer.Ordinal))
+    {
+        string source = result.Implicit ? $"{KsefEnvironment.EnvVariable}={name}" : name;
+        result.AddError($"Nieznane środowisko: {source}. Dozwolone: {string.Join(", ", KsefEnvironment.Names)}.");
+    }
+});
 
 RootCommand root = new("ksef — obsługa KSeF z wiersza poleceń (oficjalny klient MF)");
 root.Options.Add(envOption);
+root.SetAction(_ => FirstSteps.Write(Console.Out));
 root.Subcommands.Add(StatusCommand.Create(envOption));
 root.Subcommands.Add(ValidateCommand.Create());
 root.Subcommands.Add(ShowCommand.Create(envOption));

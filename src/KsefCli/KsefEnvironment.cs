@@ -11,6 +11,22 @@ public sealed record KsefEnvironment(string Name, string ApiUrl)
 
     public static readonly string[] Names = ["test", "demo", "prod"];
 
+    /// <summary>Zmienna środowiska z domyślnym środowiskiem (zamiast `-e` w każdej komendzie); jawne `-e` ma pierwszeństwo.</summary>
+    public const string EnvVariable = "KSEF_ENV";
+
+    /// <summary>Środowisko, gdy nie podano `-e`: z KSEF_ENV, a bez niej `test` — pomyłka w piaskownicy nic nie kosztuje.</summary>
+    public static string DefaultName => Environment.GetEnvironmentVariable(EnvVariable) is { Length: > 0 } name ? name : "test";
+
+    /// <summary>Co środowisko znaczy dla użytkownika — w komunikatach obok nazwy, bo `prod`/`demo`/`test` nie wszystkim nic mówią.</summary>
+    public string Description => Describe(Name);
+
+    public static string Describe(string name) => name switch
+    {
+        "prod" => "PRODUKCJA, prawdziwe faktury",
+        "demo" => "próba generalna, faktury bez skutków prawnych",
+        _ => "piaskownica MF, fikcyjne dane",
+    };
+
     /// <summary>Adres weryfikacji faktur kodem QR (KOD I) — zależy od nazwy środowiska, nie od KSEF_API_URL.</summary>
     public string QrUrl => Name switch
     {

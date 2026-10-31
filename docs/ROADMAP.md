@@ -28,7 +28,6 @@ potoki, sekrety nigdy w argumentach.
 - [ ] `ksef cert enroll|list|revoke` — wnioski o certyfikat KSeF (Authentication i Offline), także z kluczem na
   karcie/tokenie (PKCS#11); logowanie certyfikatem KSeF jest bardziej przyszłościowe niż token.
 - [ ] `ksef token new|list|revoke` — tokeny KSeF; nowy token tylko na stdout (np. prosto do menedżera sekretów).
-- [ ] Zmienna środowiskowa `KSEF_ENV` (odpowiednik `-e`).
 - [ ] `ksef status --check` / `doctor` — diagnostyka: pakiety systemowe, czas, sieć, sesja, Latarnia.
 
 ## Priorytet niski
@@ -38,6 +37,12 @@ potoki, sekrety nigdy w argumentach.
 - [ ] Lista i unieważnianie aktywnych sesji uwierzytelnienia; `upo --json`.
 - [ ] Uprawnienia (np. nadanie biuru rachunkowemu), limity API, dane testowe (tylko TEST).
 - [ ] `cert verify` — kontrola certyfikatu i klucza (próbny podpis, w tym KOD II).
+
+## Zrobione po 0.1
+
+- [x] Zmienna `KSEF_ENV` (odpowiednik `-e`) i pierwsze uruchomienie bez dokumentacji: `ksef` bez komendy opisuje
+  środowiska, komunikaty mówią po ludzku, co znaczy test/demo/prod, podpowiedź przy tokenie z innego środowiska (450)
+  i przy sesji w innym środowisku, ślad `send` na produkcji.
 
 ## Świadomie poza zakresem
 

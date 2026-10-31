@@ -8,7 +8,7 @@
 | `ksef cert new --nip <NIP> [--seal] [-o plik.pem]` | nie (offline) | Certyfikat testowy podpisany samym sobą (osoba `TINPL-NIP` albo pieczęć `VATPL-NIP`) jako PEM z kluczem prywatnym. Tylko dla środowiska TEST. Nie pisze klucza na terminal ani nie nadpisuje pliku; plik ma prawa 0600. |
 | `ksef login --nip <NIP> --cert <plik.pem\|->` | — | Logowanie certyfikatem (podpis XAdES wyzwania KSeF) w kontekście NIP-u. Przy sukcesie milczy. |
 | `ksef logout [--nip <NIP>]` | tak | Unieważnia sesję w KSeF i usuwa ją lokalnie. |
-| `ksef session [-a] [--json]` | nie | Lokalne sesje: środowisko, NIP, ważność (bez tokenów). Kod wyjścia 1, gdy brak sesji. |
+| `ksef session [-a] [--json]` | nie | Lokalne sesje: środowisko, NIP, ważność, opis środowiska (bez tokenów). Bez `-e` i `KSEF_ENV` — ze wszystkich środowisk. Kod wyjścia 1, gdy brak sesji. |
 | `ksef list [--subject buyer\|seller\|third\|authorized] [--from D] [--to D] [--date-type issue\|invoicing\|storage] [--json]` | tak | Metadane faktur z KSeF. Domyślnie faktury otrzymane (`buyer`) od 1. dnia bieżącego miesiąca. TSV bez nagłówka: numer KSeF, numer faktury, data wystawienia, NIP i nazwa sprzedawcy, identyfikator i nazwa nabywcy, brutto, waluta. Daty `RRRR-MM-DD` (czas lokalny, „do” włącznie) albo ISO 8601. Zakres dłuższy niż limit KSeF (100 dni) dzielony automatycznie; wynik obcięty przez KSeF do 10 000 pozycji pobierany dalej od ostatniej daty, bez powtórek. Pusty wynik to kod 0. |
 | `ksef send [pliki\|-]... [--json]` | tak | Wysyła faktury FA(3) w jednej sesji interaktywnej i czeka na numery KSeF. Najpierw ta sama kontrola co `validate` oraz data wystawienia nie z przyszłości — jeśli któryś plik jej nie przejdzie, nie wysyła nic. Gdy KSeF zgłosi sesję tymczasowo niedostępną (21184), wysyła dalej w nowej sesji. Gdy odpowiedź na wysyłkę nie dotrze (sieć, limit czasu), szuka faktury w sesji po skrócie SHA-256 — przyjętą podaje z numerem KSeF zamiast zgłaszać jako niewysłaną. Wynik TSV: numer KSeF, plik, numer sesji (do UPO); odrzucone (np. 440 duplikat z `originalKsefNumber`) na stderr. Kod wyjścia: 0 wszystkie przyjęte, 1 jest błąd. |
 | `ksef get [numery\|-]... [-d katalog]` | tak | XML faktur po numerze KSeF — bajt w bajt to, co wysłał wystawca. Numery z argumentów albo ze stdin (pierwsza kolumna TSV, więc `ksef list \| ksef get -d faktury/` działa bez `cut`). Jeden numer bez `-d`: XML na stdout. Z `-d`: pliki `<numer KSeF>.xml` (zapis atomowy), ścieżki na stdout; już pobrane pomija bez sieci. Faktura przyjęta przed chwilą, jeszcze niedostępna (KSeF 21165), jest pobierana ponownie do 1 min. Kod wyjścia: 0 wszystkie pobrane, 1 jest błąd. |
@@ -44,7 +44,30 @@ nie warto odpytywać często. Przekroczenie czasu odpowiedzi HTTP (5 min) kończ
 Wyszukiwanie metadanych w KSeF jest ostatecznie spójne: faktura przyjęta przed chwilą bywa widoczna
 w `ksef list` dopiero po kilku sekundach.
 
-Domyślne środowisko: `test`.
+## Środowiska
+
+KSeF Ministerstwa Finansów ma trzy osobne środowiska — osobne adresy, dane, sesje i tokeny:
+
+| `-e` | Środowisko MF | Dane i logowanie | Skutek prawny |
+|---|---|---|---|
+| `test` (domyślne) | testowe — piaskownica | fikcyjne; dowolny NIP z poprawną sumą kontrolną, certyfikat z `ksef cert new` | żaden |
+| `demo` | przedprodukcyjne — próba generalna | prawdziwy NIP i prawdziwe uprawnienia (Profil Zaufany, podpis kwalifikowany, token DEMO) | żaden |
+| `prod` | produkcyjne | prawdziwe faktury firmy | **wysłana faktura = wystawiona** |
+
+Środowisko wybiera `-e` przy każdej komendzie albo zmienna `KSEF_ENV` (np. w skrypcie, cronie, `~/.bashrc`);
+`-e` ma pierwszeństwo, a bez obu jest `test` — pomyłka w piaskownicy nic nie kosztuje.
+
+```bash
+export KSEF_ENV=prod          # od teraz w tej powłoce: produkcja
+ksef list                     # = ksef -e prod list
+ksef -e test session          # jawne -e wygrywa ze zmienną
+```
+
+Token wygenerowany w Aplikacji Podatnika działa tylko w środowisku, w którym go wygenerowano — token
+produkcyjny z komendą bez `-e prod` (czyli na TEST) KSeF odrzuca kodem 450, a `ksef` podpowiada `-e prod`.
+Gdy komenda nie znajdzie sesji, a jest sesja w innym środowisku, `ksef` to wskazuje. `send` na produkcji
+zostawia na stderr jedną linię (`ksef: PRODUKCJA, NIP …: wysyłam N faktur…`) — ślad w logach, niczego nie blokuje.
+Samo `ksef` bez komendy pokazuje te trzy środowiska i pierwsze kroki.
 
 ## Logowanie
 

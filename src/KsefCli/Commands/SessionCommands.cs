@@ -29,14 +29,20 @@ public static class SessionCommands
         Option<bool> allOption = new("--all", "-a") { Description = "Sesje ze wszystkich środowisk" };
         Option<bool> jsonOption = CliIo.JsonOption();
 
-        Command command = new("session", "Lokalne sesje KSeF (bez tokenów): środowisko, NIP, ważność. Kod wyjścia 1, gdy brak sesji");
+        Command command = new("session", "Lokalne sesje KSeF (bez tokenów): środowisko, NIP, ważność; bez -e i KSEF_ENV — ze wszystkich środowisk. Kod wyjścia 1, gdy brak sesji");
         command.Options.Add(allOption);
         command.Options.Add(jsonOption);
+        // Bez -e i bez KSEF_ENV pokazujemy wszystkie środowiska: „gdzie jestem zalogowany” to częste pierwsze pytanie,
+        // a domyślne `test` ukryłoby sesję produkcyjną.
         command.SetAction(parseResult => List(
-            parseResult.GetValue(allOption) ? null : parseResult.GetRequiredValue(envOption),
+            parseResult.GetValue(allOption) || IsUnchosen(parseResult, envOption) ? null : parseResult.GetRequiredValue(envOption),
             parseResult.GetValue(jsonOption)));
         return command;
     }
+
+    private static bool IsUnchosen(ParseResult parseResult, Option<string> envOption) =>
+        parseResult.GetResult(envOption) is null or { Implicit: true }
+        && Environment.GetEnvironmentVariable(KsefEnvironment.EnvVariable) is null or "";
 
     private static async Task<int> LogoutAsync(KsefEnvironment env, string? nip, CancellationToken cancellationToken)
     {
@@ -85,7 +91,7 @@ public static class SessionCommands
         {
             foreach (SessionInfo info in infos)
             {
-                Console.WriteLine($"{info.Environment}\t{info.Nip}\tsesja ważna do {info.RefreshValidUntil.ToLocalTime():yyyy-MM-dd HH:mm}");
+                Console.WriteLine($"{info.Environment}\t{info.Nip}\tsesja ważna do {info.RefreshValidUntil.ToLocalTime():yyyy-MM-dd HH:mm}\t{KsefEnvironment.Describe(info.Environment)}");
             }
         }
         return infos.Count > 0 ? 0 : 1;

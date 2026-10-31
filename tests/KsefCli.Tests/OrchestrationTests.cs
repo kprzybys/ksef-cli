@@ -94,6 +94,22 @@ public class SendOrchestrationTests
     }
 
     [Fact]
+    public async Task Send_Production_LeavesOneLineTraceOnStderr()
+    {
+        using FakeKsef ksef = OnlineSession();
+        using TempDir dir = new();
+        string file = dir.File("f1.xml");
+        File.WriteAllBytes(file, TestData.InvoiceToSend(Nip));
+        FakeKsef.WriteLoginSession(dir.Path, Nip, "prod");
+
+        CliResult result = await ksef.RunAsync(dir.Path, null, new Dictionary<string, string> { ["KSEF_ENV"] = "prod" }, "send", file);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal($"ksef: PRODUKCJA, NIP {Nip}: wysyłam 1 fakturę — wysłana = wystawiona.\n", result.Stderr);
+        Assert.Equal($"{KsefNumber(1)}\t{file}\t{Session}\n", result.Stdout);
+    }
+
+    [Fact]
     public async Task Send_IssueDateInFuture_SendsNothing()
     {
         using FakeKsef ksef = OnlineSession();

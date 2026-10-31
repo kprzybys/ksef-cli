@@ -52,8 +52,10 @@ ksef send faktura.xml                        # numer KSeF, plik, numer sesji
 ksef list --subject seller                   # faktury wystawione (domyślnie: otrzymane)
 ```
 
-Domyślne środowisko to `test`; produkcja tylko jawnie: `ksef -e prod …`. Pakiety systemowe (ICU, OpenSSL,
-libxslt) dla każdej dystrybucji: `scripts/install-deps.sh` i [docs/INSTALL.md](docs/INSTALL.md).
+Domyślne środowisko to `test` (piaskownica MF, fikcyjne dane); prawdziwa firma tylko jawnie: `ksef -e prod …`
+albo `export KSEF_ENV=prod` — zob. [środowiska](docs/COMMANDS.md#środowiska). Samo `ksef` pokazuje pierwsze kroki.
+Pakiety systemowe (ICU, OpenSSL, libxslt) dla każdej dystrybucji: `scripts/install-deps.sh` i
+[docs/INSTALL.md](docs/INSTALL.md).
 
 ## Komendy
 

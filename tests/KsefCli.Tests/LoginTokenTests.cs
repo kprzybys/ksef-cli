@@ -87,9 +87,28 @@ public class LoginTokenTests
         CliResult login = await ksef.RunAsync(dir.Path, "login", "--nip", Nip, "--token-file", file);
 
         Assert.Equal(1, login.ExitCode);
-        Assert.Equal($"ksef: logowanie NIP {Nip} (test) tokenem KSeF nieudane: KSeF: 450 Uwierzytelnianie zakończone niepowodzeniem z powodu błędnego tokenu\n", login.Stderr);
+        Assert.Equal(
+            $"ksef: logowanie NIP {Nip} (test) tokenem KSeF nieudane: KSeF: 450 Uwierzytelnianie zakończone niepowodzeniem z powodu błędnego tokenu\n"
+            + "ksef: token działa tylko w środowisku, w którym go wygenerowano; to jest test (piaskownica MF, fikcyjne dane). "
+            + $"Token dla prawdziwej firmy: ksef -e prod login --nip {Nip} --token-file …\n",
+            login.Stderr);
         Assert.Empty(ksef.RequestsTo("POST", "auth/token/redeem"));
         Assert.Equal(1, (await ksef.RunAsync(dir.Path, "session")).ExitCode);
+    }
+
+    [Fact]
+    public async Task Login_Token_RejectedOnProduction_HasNoEnvironmentHint()
+    {
+        using FakeKsef ksef = AuthenticatingKsef(450, "Uwierzytelnianie zakończone niepowodzeniem z powodu błędnego tokenu");
+        using TempDir dir = new();
+        string file = dir.File("token");
+        File.WriteAllText(file, Token);
+
+        CliResult login = await ksef.RunAsync(dir.Path, "-e", "prod", "login", "--nip", Nip, "--token-file", file);
+
+        Assert.Equal(1, login.ExitCode);
+        Assert.DoesNotContain("-e prod", login.Stderr);
+        Assert.Single(login.Stderr.Split('\n', StringSplitOptions.RemoveEmptyEntries));
     }
 }
 

@@ -475,6 +475,89 @@ public class CliOfflineTests : IDisposable
         Assert.Contains("XDG_RUNTIME_DIR", result.Stderr);
     }
 
+    // --- środowiska i pierwsze uruchomienie ---
+
+    private static Dictionary<string, string> KsefEnv(string value) => new() { ["KSEF_ENV"] = value };
+
+    [Fact]
+    public async Task NoCommand_ShowsFirstStepsWithEnvironmentsExplained()
+    {
+        CliResult result = await Ksef.RunAsync(dir.Path);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal("", result.Stderr);
+        Assert.Contains("ksef -e prod …   PRODUKCJA, prawdziwe faktury", result.Stdout);
+        Assert.Contains("piaskownica MF", result.Stdout);
+        Assert.Contains("KSEF_ENV", result.Stdout);
+        Assert.Contains("ksef -e prod login --nip <NIP> --token-file", result.Stdout);
+    }
+
+    [Fact]
+    public async Task Session_WithoutEnvironment_ListsAllEnvironmentsWithDescription()
+    {
+        FakeKsef.WriteLoginSession(dir.Path, "1234563218", "prod");
+        FakeKsef.WriteLoginSession(dir.Path, "5908996669", "test");
+
+        CliResult all = await Ksef.RunAsync(dir.Path, "session");
+        CliResult test = await Ksef.RunAsync(dir.Path, "session", "-e", "test");
+
+        Assert.Equal(0, all.ExitCode);
+        string[] lines = all.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(2, lines.Length);
+        Assert.StartsWith("prod\t1234563218\t", lines[0], StringComparison.Ordinal);
+        Assert.EndsWith("\tPRODUKCJA, prawdziwe faktury", lines[0], StringComparison.Ordinal);
+        Assert.StartsWith("test\t5908996669\t", lines[1], StringComparison.Ordinal);
+        Assert.Single(test.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    [Fact]
+    public async Task KsefEnv_SelectsEnvironment_AndExplicitFlagWins()
+    {
+        FakeKsef.WriteLoginSession(dir.Path, "1234563218", "prod");
+
+        CliResult fromVariable = await Ksef.RunAsync(dir.Path, null, KsefEnv("prod"), "session");
+        CliResult flagWins = await Ksef.RunAsync(dir.Path, null, KsefEnv("prod"), "session", "-e", "test");
+
+        Assert.Equal(0, fromVariable.ExitCode);
+        Assert.StartsWith("prod\t1234563218\t", fromVariable.Stdout, StringComparison.Ordinal);
+        Assert.Equal(1, flagWins.ExitCode);
+        Assert.Empty(flagWins.StdoutBytes);
+    }
+
+    [Fact]
+    public async Task KsefEnv_Unknown_IsRejectedWithVariableName()
+    {
+        CliResult result = await Ksef.RunAsync(dir.Path, null, KsefEnv("prd"), "session");
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Contains("Nieznane środowisko: KSEF_ENV=prd. Dozwolone: test, demo, prod.", result.Stderr);
+    }
+
+    [Fact]
+    public async Task NoSession_PointsToSessionInOtherEnvironment()
+    {
+        FakeKsef.WriteLoginSession(dir.Path, "1234563218", "prod");
+
+        CliResult result = await Ksef.RunAsync(dir.Path, "list");
+
+        AssertCleanError(result);
+        Assert.Contains("Brak sesji w środowisku test (piaskownica MF, fikcyjne dane)", result.Stderr);
+        Assert.Contains("Masz sesję w: prod (NIP 1234563218) — dodaj -e prod albo ustaw KSEF_ENV=prod.", result.Stderr);
+    }
+
+    [Fact]
+    public async Task NoSessionAnywhere_ShowsHowToLogInForSandboxAndProduction()
+    {
+        CliResult test = await Ksef.RunAsync(dir.Path, "list");
+        CliResult prod = await Ksef.RunAsync(dir.Path, "-e", "prod", "list");
+
+        AssertCleanError(test);
+        Assert.Contains("ksef cert new", test.Stderr);
+        Assert.Contains("prawdziwa firma: ksef -e prod login --nip <NIP> --token-file <plik>", test.Stderr);
+        AssertCleanError(prod);
+        Assert.Contains("Brak sesji w środowisku prod (PRODUKCJA, prawdziwe faktury). Zaloguj się: ksef -e prod login", prod.Stderr);
+    }
+
     [Fact]
     public async Task UnknownEnvironment_IsRejected()
     {

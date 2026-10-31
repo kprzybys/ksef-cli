@@ -71,16 +71,38 @@ public static class SessionStore
             string path = PathFor(environment, nip);
             return File.Exists(path)
                 ? Read(path)
-                : throw new SessionException($"Brak sesji dla NIP {nip} w środowisku {environment}. Zaloguj się: ksef login -e {environment} --nip {nip} --cert <plik>");
+                : throw new SessionException(NoSession(environment, nip));
         }
 
         IReadOnlyList<KsefSession> sessions = List(environment);
         return sessions.Count switch
         {
             1 => sessions[0],
-            0 => throw new SessionException($"Brak sesji w środowisku {environment}. Zaloguj się: ksef login -e {environment} --nip <NIP> --cert <plik>"),
+            0 => throw new SessionException(NoSession(environment, null)),
             _ => throw new SessionException($"Kilka sesji w środowisku {environment} ({string.Join(", ", sessions.Select(s => s.Nip))}) — wskaż --nip."),
         };
+    }
+
+    /// <summary>
+    /// Brak sesji z podpowiedzią: najczęściej to sesja w innym środowisku (zalogowany na prod, komenda bez `-e`),
+    /// więc wskazujemy ją wprost; bez żadnej sesji — gotowa komenda logowania.
+    /// </summary>
+    private static string NoSession(string environment, string? nip)
+    {
+        string what = nip is null ? "Brak sesji" : $"Brak sesji dla NIP {nip}";
+        string message = $"{what} w środowisku {environment} ({KsefEnvironment.Describe(environment)}).";
+        List<KsefSession> elsewhere = [.. List().Where(s => s.Environment != environment && (nip is null || s.Nip == nip))];
+        if (elsewhere.Count > 0)
+        {
+            string other = elsewhere[0].Environment;
+            string found = string.Join(", ", elsewhere.Select(s => $"{s.Environment} (NIP {s.Nip})"));
+            return $"{message} Masz sesję w: {found} — dodaj -e {other} albo ustaw {KsefEnvironment.EnvVariable}={other}.";
+        }
+        string who = nip ?? "<NIP>";
+        return environment == KsefEnvironment.Test.Name
+            ? $"{message} Zaloguj się w piaskownicy: ksef login --nip {who} --cert <plik> (certyfikat: ksef cert new); "
+                + $"prawdziwa firma: ksef -e prod login --nip {who} --token-file <plik>"
+            : $"{message} Zaloguj się: ksef -e {environment} login --nip {who} --token-file <plik> (token z Aplikacji Podatnika KSeF)";
     }
 
     public static void Delete(KsefSession session) => File.Delete(PathFor(session.Environment, session.Nip));

@@ -65,6 +65,13 @@ public static class SendCommand
         return command;
     }
 
+    private static string InvoicesWord(int count) => count switch
+    {
+        1 => "fakturę",
+        _ when count % 10 is >= 2 and <= 4 && count % 100 is < 12 or > 14 => "faktury",
+        _ => "faktur",
+    };
+
     private static async Task<int> RunAsync(KsefEnvironment env, string? nip, string[] files, bool json, CancellationToken cancellationToken)
     {
         List<(string Name, byte[] Xml)> invoices = [];
@@ -108,6 +115,11 @@ public static class SendCommand
         try
         {
             KsefSession session = SessionStore.Resolve(env.Name, nip);
+            if (env.Name == KsefEnvironment.Prod.Name)
+            {
+                // Jedna linia na stderr, nic nie blokuje: ślad w logu crona, że faktury poszły naprawdę.
+                CliIo.Error($"PRODUKCJA, NIP {session.Nip}: wysyłam {invoices.Count} {InvoicesWord(invoices.Count)} — wysłana = wystawiona.");
+            }
             await using ServiceProvider provider = await KsefServices.CreateWithCryptographyAsync(env, cancellationToken);
             using IServiceScope scope = provider.CreateScope();
             AccessTokenProvider tokens = new(session, scope.ServiceProvider.GetRequiredService<IAuthorizationClient>());

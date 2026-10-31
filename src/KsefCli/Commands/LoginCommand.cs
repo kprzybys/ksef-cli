@@ -190,6 +190,13 @@ public static partial class LoginCommand
         catch (Exception ex) when (ex is KsefApiException or HttpRequestException or AuthenticationFailedException or SessionException or ArgumentException)
         {
             CliIo.Error($"logowanie NIP {nip} ({env.Name}) tokenem KSeF nieudane: {ex.Message}");
+            if (ex is AuthenticationFailedException { Code: AuthenticationStatusCodeResponse.InvalidToken } && env.Name != KsefEnvironment.Prod.Name)
+            {
+                // Najczęstsza pułapka nowego użytkownika: token z Aplikacji Podatnika (produkcja), komenda bez -e (test).
+                // Każde środowisko MF ma własne tokeny.
+                CliIo.Error($"token działa tylko w środowisku, w którym go wygenerowano; to jest {env.Name} ({env.Description}). "
+                    + $"Token dla prawdziwej firmy: ksef -e prod login --nip {nip} --token-file …");
+            }
             return 1;
         }
     }
@@ -300,10 +307,13 @@ public static partial class LoginCommand
                     break;
                 default:
                     string details = status.Status.Details is { Count: > 0 } d ? $" ({string.Join("; ", d)})" : "";
-                    throw new AuthenticationFailedException($"KSeF: {status.Status.Code} {status.Status.Description}{details}");
+                    throw new AuthenticationFailedException(status.Status.Code, $"KSeF: {status.Status.Code} {status.Status.Description}{details}");
             }
         }
     }
 
-    private sealed class AuthenticationFailedException(string message) : Exception(message);
+    private sealed class AuthenticationFailedException(int code, string message) : Exception(message)
+    {
+        public int Code { get; } = code;
+    }
 }
