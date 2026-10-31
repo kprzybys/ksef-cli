@@ -72,11 +72,19 @@ internal static class Ksef
         using MemoryStream stdout = new();
         Task copyStdout = process.StandardOutput.BaseStream.CopyToAsync(stdout);
 
-        if (stdin is not null)
+        // ksef, który kończy się przed odczytem stdin (np. błąd katalogu sesji), zamyka rurę — wtedy zapis i jej
+        // zamknięcie dają „Broken pipe”, co nie jest błędem testu (szybka binarka AOT trafia na to częściej).
+        try
         {
-            await process.StandardInput.BaseStream.WriteAsync(stdin);
+            if (stdin is not null)
+            {
+                await process.StandardInput.BaseStream.WriteAsync(stdin);
+            }
+            process.StandardInput.Close();
         }
-        process.StandardInput.Close();
+        catch (IOException)
+        {
+        }
 
         using CancellationTokenSource timeout = new(TimeSpan.FromMinutes(3));
         await process.WaitForExitAsync(timeout.Token);
