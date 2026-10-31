@@ -284,17 +284,19 @@ public class SendOrchestrationTests
     {
         // Ctrl+C / timeout w cronie w trakcie wysyłki faktury 2: faktura 1 już jest w KSeF — jej numer referencyjny
         // musi wyjść, 2 mogła dotrzeć (status nieznany), 3 nie poszła; sesja zamknięta, kod 130.
+        TaskCompletionSource secondInvoiceArrived = new(TaskCreationOptions.RunContinuationsAsynchronously);
         using FakeKsef ksef = OnlineSession(invoice: n =>
         {
             if (n == 2)
             {
+                secondInvoiceArrived.TrySetResult();
                 Thread.Sleep(TimeSpan.FromSeconds(20));
             }
             return null;
         });
         (TempDir dir, string[] files) = Invoices(3);
         using TempDir _ = dir;
-        CliResult result = await Ksef.RunInterruptedAsync(dir.Path, TimeSpan.FromSeconds(4),
+        CliResult result = await Ksef.RunInterruptedAsync(dir.Path, secondInvoiceArrived.Task,
             new Dictionary<string, string> { ["KSEF_API_URL"] = ksef.Url }, ["send", .. files]);
 
         Assert.Equal(130, result.ExitCode);
