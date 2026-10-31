@@ -16,7 +16,7 @@ public class LoginOfflineTests
     private const string Challenge = "20261030-CR-0123456789-ABCDEF0123-01";
 
     /// <summary>KSeF przyjmujący logowanie; `status` decyduje o wyniku weryfikacji podpisu (domyślnie 200).</summary>
-    private static FakeKsef AuthenticatingKsef(object? status = null)
+    private static FakeKsef AuthenticatingKsef(object? status = null, string authenticationMethod = "QualifiedSeal")
     {
         FakeKsef ksef = new();
         DateTimeOffset until = DateTimeOffset.UtcNow.AddMinutes(15);
@@ -35,7 +35,7 @@ public class LoginOfflineTests
         ksef.On("GET", $"auth/{Reference}", (_, _) => FakeResponse.Json(new
         {
             startDate = DateTimeOffset.UtcNow,
-            authenticationMethod = "QualifiedSeal",
+            authenticationMethod,
             status = status ?? new { code = 200, description = "Uwierzytelnianie zakończone sukcesem" },
         }));
         ksef.On("POST", "auth/token/redeem", (_, _) => FakeResponse.Json(new
@@ -84,6 +84,19 @@ public class LoginOfflineTests
         CliResult session = await ksef.RunAsync(dir.Path, "session", "--json");
         Assert.True(session.ExitCode == 0, session.Stderr);
         Assert.Contains(Nip, session.Stdout);
+    }
+
+    [Fact]
+    public async Task Login_UnknownAuthenticationMethod_StillSucceeds()
+    {
+        // MF wycofuje pole authenticationMethod i dodaje metody logowania; nowa wartość nie może przerwać logowania.
+        using TempDir dir = new();
+        using FakeKsef ksef = AuthenticatingKsef(authenticationMethod: "SomeFutureMethod");
+        string pem = await NewCertificateAsync(dir);
+
+        CliResult login = await ksef.RunAsync(dir.Path, "login", "--nip", Nip, "--cert", pem);
+
+        Assert.True(login.ExitCode == 0, login.Stderr);
     }
 
     [Fact]

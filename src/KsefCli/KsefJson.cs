@@ -29,7 +29,22 @@ internal static class KsefJson
         FieldInfo field = typeof(JsonUtil).GetField("_settings", BindingFlags.NonPublic | BindingFlags.Static)
             ?? throw new InvalidOperationException("KSeF.Client: brak pola JsonUtil._settings — zmieniła się biblioteka MF, popraw KsefJson.");
         JsonSerializerOptions current = (JsonSerializerOptions)field.GetValue(null)!;
-        field.SetValue(null, Configure(new JsonSerializerOptions(current), MfJsonContext.Default));
+        JsonSerializerOptions options = Configure(new JsonSerializerOptions(current), MfJsonContext.Default);
+        // Pole authenticationMethod MF wycofuje (zastępuje je authenticationMethodInfo), a nowe metody logowania
+        // dochodzą bez zmiany biblioteki: nieznana wartość nie może przerwać logowania — ksef jej nie używa.
+        options.Converters.Add(new LenientEnumConverter<KSeF.Client.Core.Models.Sessions.ActiveSessions.AuthenticationMethodEnum>());
+        field.SetValue(null, options);
+    }
+
+    /// <summary>Enum jako tekst; wartość spoza enuma (nowa w API) daje wartość domyślną zamiast wyjątku.</summary>
+    private sealed class LenientEnumConverter<T> : JsonConverter<T>
+        where T : struct, Enum
+    {
+        public override T Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+            reader.TokenType == JsonTokenType.String && Enum.TryParse(reader.GetString(), ignoreCase: true, out T value) ? value : default;
+
+        public override void Write(Utf8JsonWriter writer, T value, JsonSerializerOptions options) =>
+            writer.WriteStringValue(value.ToString());
     }
 
     public static JsonSerializerOptions Configure(JsonSerializerOptions options, IJsonTypeInfoResolver context)

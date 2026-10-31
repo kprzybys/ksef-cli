@@ -13,6 +13,30 @@ public class KsefDocumentRulesTests
     }
 
     [Fact]
+    public void NipWithWrongChecksum_IsRejectedWithPosition()
+    {
+        // 1111111112: poprawny wzorzec XSD, zła suma kontrolna — KSeF odrzuca to tylko na produkcji.
+        // Tylko pierwszy NIP (sprzedawca) — wzór MF ma ten sam NIP także u nabywcy.
+        int at = ValidXml.IndexOf("<NIP>1111111111</NIP>", StringComparison.Ordinal);
+        string xml = string.Concat(ValidXml.AsSpan(0, at), "<NIP>1111111112</NIP>", ValidXml.AsSpan(at + "<NIP>1111111111</NIP>".Length));
+
+        Fa3ValidationError error = Assert.Single(KsefDocumentRules.Check(Utf8(xml)));
+
+        Assert.Contains("NIP 1111111112 ma błędną sumę kontrolną", error.Message);
+        Assert.True(error.Line > 1);
+    }
+
+    [Fact]
+    public void ValidNipsInMfSamples_PassChecksum()
+    {
+        // Wzory MF z wieloma podmiotami (Podmiot3, upoważniony) — wszystkie NIP-y mają poprawne sumy.
+        foreach (string template in new[] { "invoice-template-fa-3-with-custom-Subject3.xml", "invoice-template-fa-3-with-attachment.xml" })
+        {
+            Assert.DoesNotContain(KsefDocumentRules.Check(Utf8(TestInvoices.Fill(template))), e => e.Message.Contains("NIP"));
+        }
+    }
+
+    [Fact]
     public void Bom_IsRejected()
     {
         byte[] withBom = [0xEF, 0xBB, 0xBF, .. Utf8(ValidXml)];

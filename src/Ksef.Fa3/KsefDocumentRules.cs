@@ -8,7 +8,8 @@ namespace Ksef.Fa3;
 /// <summary>
 /// Wymagania KSeF wobec pliku faktury, których nie sprawdza XSD
 /// (ksef-api: faktury/weryfikacja-faktury.md): UTF-8 bez BOM, prolog bez innego kodowania,
-/// brak instrukcji przetwarzania, brak niezalecanych znaków Unicode, limit rozmiaru.
+/// brak instrukcji przetwarzania, brak niezalecanych znaków Unicode, limit rozmiaru, sumy kontrolne NIP
+/// (te KSeF sprawdza tylko na produkcji — na TEST faktura z błędnym NIP-em przechodzi).
 /// </summary>
 public static partial class KsefDocumentRules
 {
@@ -81,6 +82,7 @@ public static partial class KsefDocumentRules
     private static bool CheckStructure(byte[] xml, List<Fa3ValidationError> errors)
     {
         bool hasAttachment = false;
+        (int Line, int Column)? nip = null;
         XmlReaderSettings settings = new() { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null };
         using XmlReader reader = XmlReader.Create(new MemoryStream(xml), settings);
         try
@@ -96,6 +98,25 @@ public static partial class KsefDocumentRules
                 {
                     hasAttachment = true;
                 }
+                else if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "NIP" && reader.NamespaceURI == Fa3Schema.Namespace)
+                {
+                    IXmlLineInfo info = (IXmlLineInfo)reader;
+                    nip = (info.LineNumber, info.LinePosition);
+                }
+                else if (nip is { } at && reader.NodeType == XmlNodeType.Text)
+                {
+                    // Wzorzec NIP-u (10 cyfr) sprawdza XSD; tu tylko suma kontrolna poprawnie zbudowanego.
+                    string value = reader.Value.Trim();
+                    if (value.Length == 10 && value.All(char.IsAsciiDigit) && !IsNipChecksumValid(value))
+                    {
+                        errors.Add(Error(at.Line, at.Column, $"NIP {value} ma błędną sumę kontrolną — KSeF produkcyjny odrzuci fakturę (na TEST przejdzie)."));
+                    }
+                    nip = null;
+                }
+                else if (reader.NodeType == XmlNodeType.EndElement)
+                {
+                    nip = null;
+                }
             }
         }
         catch (XmlException)
@@ -103,6 +124,18 @@ public static partial class KsefDocumentRules
             // Błąd składni zgłasza walidacja XSD (z pozycją); tu nie dublujemy.
         }
         return hasAttachment;
+    }
+
+    // Wagi 6,5,7,2,3,4,5,6,7; reszta z dzielenia przez 11 to ostatnia cyfra (10 — NIP niepoprawny).
+    private static bool IsNipChecksumValid(string nip)
+    {
+        ReadOnlySpan<int> weights = [6, 5, 7, 2, 3, 4, 5, 6, 7];
+        int sum = 0;
+        for (int i = 0; i < weights.Length; i++)
+        {
+            sum += (nip[i] - '0') * weights[i];
+        }
+        return sum % 11 == nip[9] - '0';
     }
 
     private static void CheckSize(int size, bool hasAttachment, List<Fa3ValidationError> errors)

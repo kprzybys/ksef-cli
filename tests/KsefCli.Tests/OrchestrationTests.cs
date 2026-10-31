@@ -94,6 +94,57 @@ public class SendOrchestrationTests
     }
 
     [Fact]
+    public async Task Send_IssueDateInFuture_SendsNothing()
+    {
+        using FakeKsef ksef = OnlineSession();
+        (TempDir dir, string[] files) = Invoices(2);
+        using TempDir _ = dir;
+        string future = DateTime.UtcNow.AddDays(2).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        File.WriteAllText(files[1], File.ReadAllText(files[1]).Replace("<P_1>2025-09-01</P_1>", $"<P_1>{future}</P_1>", StringComparison.Ordinal));
+
+        CliResult result = await ksef.RunAsync(dir.Path, ["send", .. files]);
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Empty(result.StdoutBytes);
+        Assert.Contains($"{files[1]}: data wystawienia P_1 {future} jest w przyszłości — KSeF ją odrzuci.", result.Stderr);
+        Assert.Empty(ksef.RequestsTo("POST", "sessions/online"));
+    }
+
+    [Fact]
+    public async Task Send_SessionTemporarilyUnavailable_ContinuesInNewSession()
+    {
+        // KSeF 21184: faktury 2 nie przyjęto, a sesja jest niedostępna — MF zaleca nową sesję i ponowienie.
+        // Faktura 1 zostaje w pierwszej sesji, 2 i 3 idą w drugiej; każda z numerem swojej sesji (do UPO).
+        const string Second = "20261030-SO-394363C000-F9191A9DA9-99";
+        using FakeKsef ksef = OnlineSession(invoice: n => n == 2 ? FakeResponse.Error(400, 21184, "Sesja tymczasowo niedostępna") : null);
+        ksef.OnSequence("POST", "sessions/online",
+            FakeResponse.Json(new { referenceNumber = Session, validUntil = DateTimeOffset.UtcNow.AddHours(12) }),
+            FakeResponse.Json(new { referenceNumber = Second, validUntil = DateTimeOffset.UtcNow.AddHours(12) }));
+        int sentInSecond = 1;
+        ksef.On("POST", $"sessions/online/{Second}/invoices", (_, _) =>
+            FakeResponse.Json(new { referenceNumber = InvoiceReference(Interlocked.Increment(ref sentInSecond)) }));
+        ksef.On("GET", $@"sessions/{Second}/invoices/20261030-EE-(\d{{10}})-0000000000-00", (_, match) =>
+            InvoiceStatus(200, "Sukces", KsefNumber(int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture))));
+        ksef.On("POST", $"sessions/online/{Second}/close", (_, _) => new FakeResponse(204));
+        (TempDir dir, string[] files) = Invoices(3);
+        using TempDir _ = dir;
+
+        CliResult result = await ksef.RunAsync(dir.Path, ["send", .. files]);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(
+            $"{KsefNumber(1)}\t{files[0]}\t{Session}\n{KsefNumber(2)}\t{files[1]}\t{Second}\n{KsefNumber(3)}\t{files[2]}\t{Second}\n",
+            result.Stdout);
+        Assert.Equal($"ksef: sesja {Session} tymczasowo niedostępna (KSeF 21184) — wysyłam dalej w nowej sesji.\n", result.Stderr);
+        // Druga sesja ma własny klucz AES: faktura 2 odszyfrowana jego kluczem to dokładnie bajty pliku.
+        FakeRequest secondOpen = ksef.RequestsTo("POST", "sessions/online")[1];
+        FakeRequest resent = ksef.RequestsTo("POST", $"sessions/online/{Second}/invoices")[0];
+        Assert.Equal(File.ReadAllBytes(files[1]), FakeKsef.DecryptInvoice(secondOpen, resent));
+        Assert.Single(ksef.RequestsTo("POST", $"sessions/online/{Session}/close"));
+        Assert.Single(ksef.RequestsTo("POST", $"sessions/online/{Second}/close"));
+    }
+
+    [Fact]
     public async Task Send_ConnectionDropsMidRun_KeepsNumbersOfAcceptedInvoices()
     {
         // Najgorszy przypadek: KSeF przyjął fakturę 1 i 3, przy 2 zerwało się połączenie. Numery KSeF

@@ -11,6 +11,14 @@ public sealed record KsefEnvironment(string Name, string ApiUrl)
 
     public static readonly string[] Names = ["test", "demo", "prod"];
 
+    /// <summary>Adres weryfikacji faktur kodem QR (KOD I) — zależy od nazwy środowiska, nie od KSEF_API_URL.</summary>
+    public string QrUrl => Name switch
+    {
+        "prod" => KsefQREnvironmentsUris.PROD,
+        "demo" => KsefQREnvironmentsUris.DEMO,
+        _ => KsefQREnvironmentsUris.TEST,
+    };
+
     /// <summary>Zmienna środowiska z innym adresem API (np. symulator KSeF w testach); sesje zostają przy nazwie środowiska.</summary>
     public const string ApiUrlVariable = "KSEF_API_URL";
 

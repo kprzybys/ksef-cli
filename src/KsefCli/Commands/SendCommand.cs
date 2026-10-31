@@ -25,6 +25,10 @@ public static class SendCommand
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan PollTimeout = TimeSpan.FromMinutes(5);
 
+    // „Sesja tymczasowo niedostępna” (API 2.8.0+): faktury nie przyjęto, MF zaleca nową sesję i ponowienie.
+    private const int SessionTemporarilyUnavailable = 21184;
+    private const int MaxSessionReopens = 3;
+
     // Index: pozycja pliku na wejściu — ten sam plik może wystąpić dwa razy.
     // internal: typ wyniku --json musi być widoczny dla CliJsonContext.
     internal sealed record SendResult(
@@ -78,10 +82,17 @@ public static class SendCommand
                 invalid = true;
                 continue;
             }
-            foreach (Fa3ValidationError error in Fa3Validator.Validate(xml))
+            IReadOnlyList<Fa3ValidationError> errors = Fa3Validator.Validate(xml);
+            foreach (Fa3ValidationError error in errors)
             {
                 string severity = error.Severity == System.Xml.Schema.XmlSeverityType.Error ? "błąd" : "ostrzeżenie";
                 Console.Error.WriteLine($"{name}:{error.Line}:{error.Column}: {error.Source} {severity}: {error.Message}");
+                invalid = true;
+            }
+            if (errors.Count == 0 && InvoiceQr.SellerAndIssueDate(xml).IssueDate is { } issued && issued > PolandToday())
+            {
+                // KSeF odrzuca fakturę z datą wystawienia późniejszą niż dzień jej przyjęcia.
+                CliIo.Error($"{name}: data wystawienia P_1 {issued:yyyy-MM-dd} jest w przyszłości — KSeF ją odrzuci.");
                 invalid = true;
             }
             invoices.Add((name, xml));
@@ -136,48 +147,44 @@ public static class SendCommand
         IKSeFClient ksef, ICryptographyService crypto, AccessTokenProvider tokens,
         List<(string Name, byte[] Xml)> invoices, CancellationToken cancellationToken)
     {
-        EncryptionData encryption = crypto.GetEncryptionData();
-        OpenOnlineSessionRequest open = OpenOnlineSessionRequestBuilder.Create()
-            .WithFormCode(
-                systemCode: SystemCodeHelper.GetSystemCode(SystemCode.FA3),
-                schemaVersion: SystemCodeHelper.GetSchemaVersion(SystemCode.FA3),
-                value: SystemCodeHelper.GetValue(SystemCode.FA3))
-            .WithEncryption(
-                encryptedSymmetricKey: encryption.EncryptionInfo.EncryptedSymmetricKey,
-                initializationVector: encryption.EncryptionInfo.InitializationVector,
-                publicKeyId: encryption.EncryptionInfo.PublicKeyId)
-            .Build();
-        OpenOnlineSessionResponse online = await ksef.OpenOnlineSessionAsync(open, await tokens.GetAsync(cancellationToken), cancellationToken: cancellationToken);
-        string sessionReference = online.ReferenceNumber;
+        OnlineSession session = await OpenSessionAsync(ksef, crypto, tokens, cancellationToken);
+        HashSet<string> used = new(StringComparer.Ordinal);
+        int reopens = 0;
 
         // Błąd przy jednej fakturze (KSeF, sieć, limit czasu) dotyczy tylko jej: numery KSeF już przyjętych
         // faktur muszą trafić na wyjście, bo ponowna wysyłka skończy się duplikatem (440).
         List<SendResult> results = [];
-        List<(int Index, string Name, string Reference)> sent = [];
+        List<(int Index, string Name, string Session, string Reference)> sent = [];
         for (int index = 0; index < invoices.Count; index++)
         {
             (string name, byte[] xml) = invoices[index];
-            byte[] encrypted = crypto.EncryptBytesWithAES256(xml, encryption.CipherKey, encryption.CipherIv);
-            FileMetadata plain = crypto.GetMetaData(xml);
-            FileMetadata cipher = crypto.GetMetaData(encrypted);
-            SendInvoiceRequest request = SendInvoiceOnlineSessionRequestBuilder.Create()
-                .WithInvoiceHash(plain.HashSHA, plain.FileSize)
-                .WithEncryptedDocumentHash(cipher.HashSHA, cipher.FileSize)
-                .WithEncryptedDocumentContent(Convert.ToBase64String(encrypted))
-                .Build();
-            try
+            while (true)
             {
-                SendInvoiceResponse response = await KsefRetry.OnRateLimitAsync(async () =>
-                    await ksef.SendOnlineSessionInvoiceAsync(request, sessionReference, await tokens.GetAsync(cancellationToken), cancellationToken), cancellationToken);
-                sent.Add((index, name, response.ReferenceNumber));
-            }
-            catch (Exception ex) when (CliErrors.Describe(ex) is { } message)
-            {
-                results.Add(Failed(index, name, sessionReference, null, ex, message));
+                try
+                {
+                    SendInvoiceResponse response = await KsefRetry.OnRateLimitAsync(async () =>
+                        await ksef.SendOnlineSessionInvoiceAsync(InvoiceRequest(crypto, session.Encryption, xml), session.Reference,
+                            await tokens.GetAsync(cancellationToken), cancellationToken), cancellationToken);
+                    sent.Add((index, name, session.Reference, response.ReferenceNumber));
+                    used.Add(session.Reference);
+                    break;
+                }
+                catch (KsefApiException ex) when (KsefCode(ex) == SessionTemporarilyUnavailable && reopens < MaxSessionReopens)
+                {
+                    // Ta faktura i następne idą w nowej sesji; każdy wynik ma swój numer sesji (do UPO).
+                    reopens++;
+                    CliIo.Error($"sesja {session.Reference} tymczasowo niedostępna (KSeF {SessionTemporarilyUnavailable}) — wysyłam dalej w nowej sesji.");
+                    session = await OpenSessionAsync(ksef, crypto, tokens, cancellationToken);
+                }
+                catch (Exception ex) when (CliErrors.Describe(ex) is { } message)
+                {
+                    results.Add(Failed(index, name, session.Reference, null, ex, message));
+                    break;
+                }
             }
         }
 
-        foreach ((int index, string name, string reference) in sent)
+        foreach ((int index, string name, string sessionReference, string reference) in sent)
         {
             try
             {
@@ -194,26 +201,71 @@ public static class SendCommand
             }
         }
 
-        try
+        // Zamknięcie sesji uruchamia generowanie UPO. Sesję bez wysłanych faktur KSeF zamyka sam.
+        foreach (string sessionReference in used)
         {
-            // Zamknięcie sesji uruchamia generowanie UPO.
-            await ksef.CloseOnlineSessionAsync(sessionReference, await tokens.GetAsync(CancellationToken.None), CancellationToken.None);
-        }
-        catch (Exception ex) when (CliErrors.Describe(ex) is { } message)
-        {
-            // KSeF zamyka nieużywaną sesję sam; wyniki faktur są ważne niezależnie od tego.
-            CliIo.Error($"sesja {sessionReference}: nie udało się jej zamknąć ({message}) — UPO pojawi się po jej wygaśnięciu.");
+            try
+            {
+                await ksef.CloseOnlineSessionAsync(sessionReference, await tokens.GetAsync(CancellationToken.None), CancellationToken.None);
+            }
+            catch (Exception ex) when (CliErrors.Describe(ex) is { } message)
+            {
+                // KSeF zamyka nieużywaną sesję sam; wyniki faktur są ważne niezależnie od tego.
+                CliIo.Error($"sesja {sessionReference}: nie udało się jej zamknąć ({message}) — UPO pojawi się po jej wygaśnięciu.");
+            }
         }
 
         // Kolejność wyników jak kolejność plików na wejściu.
         return [.. results.OrderBy(r => r.Index)];
     }
 
+    // Dzień przyjęcia faktury liczy KSeF, czyli czas polski — niezależnie od strefy tej maszyny.
+    private static DateTime PolandToday()
+    {
+        TimeZoneInfo zone = TimeZoneInfo.TryFindSystemTimeZoneById("Europe/Warsaw", out TimeZoneInfo? warsaw) ? warsaw : TimeZoneInfo.Local;
+        return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, zone).Date;
+    }
+
+    private sealed record OnlineSession(string Reference, EncryptionData Encryption);
+
+    private static async Task<OnlineSession> OpenSessionAsync(
+        IKSeFClient ksef, ICryptographyService crypto, AccessTokenProvider tokens, CancellationToken cancellationToken)
+    {
+        // Nowy klucz AES na każdą sesję.
+        EncryptionData encryption = crypto.GetEncryptionData();
+        OpenOnlineSessionRequest open = OpenOnlineSessionRequestBuilder.Create()
+            .WithFormCode(
+                systemCode: SystemCodeHelper.GetSystemCode(SystemCode.FA3),
+                schemaVersion: SystemCodeHelper.GetSchemaVersion(SystemCode.FA3),
+                value: SystemCodeHelper.GetValue(SystemCode.FA3))
+            .WithEncryption(
+                encryptedSymmetricKey: encryption.EncryptionInfo.EncryptedSymmetricKey,
+                initializationVector: encryption.EncryptionInfo.InitializationVector,
+                publicKeyId: encryption.EncryptionInfo.PublicKeyId)
+            .Build();
+        OpenOnlineSessionResponse online = await ksef.OpenOnlineSessionAsync(open, await tokens.GetAsync(cancellationToken), cancellationToken: cancellationToken);
+        return new OnlineSession(online.ReferenceNumber, encryption);
+    }
+
+    private static SendInvoiceRequest InvoiceRequest(ICryptographyService crypto, EncryptionData encryption, byte[] xml)
+    {
+        byte[] encrypted = crypto.EncryptBytesWithAES256(xml, encryption.CipherKey, encryption.CipherIv);
+        FileMetadata plain = crypto.GetMetaData(xml);
+        FileMetadata cipher = crypto.GetMetaData(encrypted);
+        return SendInvoiceOnlineSessionRequestBuilder.Create()
+            .WithInvoiceHash(plain.HashSHA, plain.FileSize)
+            .WithEncryptedDocumentHash(cipher.HashSHA, cipher.FileSize)
+            .WithEncryptedDocumentContent(Convert.ToBase64String(encrypted))
+            .Build();
+    }
+
+    private static int? KsefCode(KsefApiException? ex) => ex?.ErrorResponse?.Exception?.ExceptionDetailList?.FirstOrDefault()?.ExceptionCode;
+
     /// <summary>Wynik dla faktury, której nie przyjęto przez błąd żądania: kod KSeF z treści błędu, osobno status HTTP.</summary>
     private static SendResult Failed(int index, string name, string sessionReference, string? invoiceReference, Exception ex, string message)
     {
         KsefApiException? api = ex as KsefApiException;
-        int? code = api?.ErrorResponse?.Exception?.ExceptionDetailList?.FirstOrDefault()?.ExceptionCode;
+        int? code = KsefCode(api);
         // Biblioteka MF zgłasza też nieczytelną odpowiedź 2xx (np. urwaną) — to nie jest błąd HTTP.
         int? httpStatus = api is { StatusCode: < System.Net.HttpStatusCode.OK or >= System.Net.HttpStatusCode.MultipleChoices } ? (int)api.StatusCode : null;
         return new SendResult(index, name, sessionReference, invoiceReference, null, code, httpStatus, message, null, null);

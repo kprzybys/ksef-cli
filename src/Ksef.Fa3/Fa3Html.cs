@@ -1,4 +1,6 @@
+using System.Text;
 using System.Xml;
+using System.Xml.Xsl;
 
 namespace Ksef.Fa3;
 
@@ -11,7 +13,8 @@ public static class Fa3Html
 {
     private const string ResourcePrefix = "Ksef.Fa3.Stylesheets.";
 
-    public static void Render(Stream xml, Stream html)
+    /// <param name="bodyPrefix">HTML wstawiany na początku &lt;body&gt; (np. kod QR weryfikujący fakturę); null — bez zmian.</param>
+    public static void Render(Stream xml, Stream html, string? bodyPrefix = null)
     {
         using MemoryStream input = new();
         xml.CopyTo(input);
@@ -24,12 +27,26 @@ public static class Fa3Html
         {
             ExtractStylesheets(dir.FullName);
             // Wynik bez BOM: idzie też na stdout, gdzie BOM psuje potoki (grep, sklejanie plików).
-            html.Write(LibXslt.Transform(Path.Combine(dir.FullName, "styl.xsl"), input.ToArray()));
+            byte[] result = LibXslt.Transform(Path.Combine(dir.FullName, "styl.xsl"), input.ToArray());
+            html.Write(bodyPrefix is null ? result : InsertAfterBodyTag(result, bodyPrefix));
         }
         finally
         {
             dir.Delete(recursive: true);
         }
+    }
+
+    // Arkusz pisze UTF-8 (xsl:output encoding="UTF-8"); wstawka zaraz za znacznikiem otwierającym <body>.
+    private static byte[] InsertAfterBodyTag(byte[] html, string fragment)
+    {
+        string text = Encoding.UTF8.GetString(html);
+        int body = text.IndexOf("<body", StringComparison.OrdinalIgnoreCase);
+        int end = body < 0 ? -1 : text.IndexOf('>', body);
+        if (end < 0)
+        {
+            throw new XsltException("wynik arkusza nie ma znacznika <body>.");
+        }
+        return Encoding.UTF8.GetBytes(text.Insert(end + 1, fragment));
     }
 
     // Te same zasady co przy walidacji: bez DTD i encji zewnętrznych; błąd składni z numerem wiersza.
