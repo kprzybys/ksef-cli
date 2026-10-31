@@ -86,6 +86,16 @@ cosign verify-blob-attestation --type slsaprovenance1 \
   ksef-<wersja>-linux-x64.tar.gz
 ```
 
+Od wersji 0.1.4 wydanie ma też **SBOM** — listę wszystkich składników binarki w formacie CycloneDX
+(`ksef-<wersja>-linux-<arch>.tar.gz.cdx.json`: biblioteka MF, pakiety NuGet, środowisko .NET wkompilowane
+w binarkę) — z osobnym podpisem (`….cdx.json.sigstore.json`). Pozwala sprawdzić skanerem podatności
+(np. `grype sbom:ksef-<wersja>-linux-x64.tar.gz.cdx.json`), czy nowa luka w zależności dotyczy `ksef`.
+
+```bash
+gh attestation verify ksef-<wersja>-linux-x64.tar.gz --repo kprzybys/ksef-cli \
+  --predicate-type https://cyclonedx.org/bom --bundle ksef-<wersja>-linux-x64.tar.gz.cdx.json.sigstore.json
+```
+
 ## Budowanie ze źródeł
 
 ```bash

@@ -73,6 +73,16 @@ jobs:
           scripts/test-distros.sh dist/release/ksef-*-linux-${{ matrix.arch }}/ksef ${{ matrix.images }} | tee dist/distros.md
           cat dist/distros.md >> "$GITHUB_STEP_SUMMARY"
           ! grep -q "BŁĄD" dist/distros.md
+      # SBOM (CycloneDX): podpisana lista składników binarki — przy nowej luce w zależności od razu widać,
+      # czy dotyczy ksef. Także bez taga (workflow_dispatch), żeby sprawdzić generowanie.
+      - name: SBOM
+        id: sbom
+        run: |
+          dotnet tool restore
+          version=$(git describe --tags --always)
+          archive=$(ls dist/release/ksef-*-linux-${{ matrix.arch }}.tar.gz)
+          scripts/sbom.sh "${version#v}" linux-${{ matrix.arch }} "$archive.cdx.json"
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
       # Atestacja pochodzenia (SLSA build provenance, Sigstore): każdy może sprawdzić, że archiwum zbudował
       # ten workflow z tego repo — `gh attestation verify` albo niezależnie `cosign` (docs/INSTALL.md).
       # Plik podpisu (.sigstore.json) idzie do wydania obok archiwum, żeby sprawdzenie nie wymagało GitHuba.
@@ -82,15 +92,25 @@ jobs:
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6  # v4.2.2
         with:
           subject-path: dist/release/*.tar.gz
-      - name: Plik podpisu do wydania
+      - name: Podpis SBOM
+        id: attest-sbom
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6  # v4.2.2
+        with:
+          subject-path: ${{ steps.sbom.outputs.archive }}
+          sbom-path: ${{ steps.sbom.outputs.archive }}.cdx.json
+      - name: Pliki podpisów do wydania
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+          SBOM_BUNDLE: ${{ steps.attest-sbom.outputs.bundle-path }}
         run: |
           archive=$(ls dist/release/ksef-*-linux-${{ matrix.arch }}.tar.gz)
           cp "$BUNDLE" "$archive.sigstore.json"
+          cp "$SBOM_BUNDLE" "$archive.cdx.json.sigstore.json"
       - name: Dołączenie do szkicu wydania
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" dist/release/*.tar.gz dist/release/*.tar.gz.sha256 dist/release/*.tar.gz.sigstore.json
+        run: gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" dist/release/*.tar.gz dist/release/*.tar.gz.sha256 dist/release/*.tar.gz.sigstore.json \
+          dist/release/*.tar.gz.cdx.json dist/release/*.tar.gz.cdx.json.sigstore.json
