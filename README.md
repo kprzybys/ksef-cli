@@ -93,6 +93,12 @@ ksef show faktura.xml -e prod -k "$(cut -f1 wyslane.tsv)" -o faktura.html   # dl
 - Testy automatyczne (ponad 200, w tym na żywym środowisku TEST MF i na binarce AOT) nie obejmują DEMO ani produkcji.
 - Limity KSeF (np. 20 zapytań o metadane na godzinę) obowiązują — krótkie 429 `ksef` przeczekuje sam.
 
+## Plany
+
+Kolejność wg ważności dla firm (z przeglądu wymagań MF): sesje wsadowe i faktury z załącznikiem; tryby
+offline z kodem „CERTYFIKAT” (KOD II); kontrola arytmetyki VAT w `validate`; wnioski o certyfikat KSeF
+i zarządzanie tokenami KSeF; przyrostowa synchronizacja faktur otrzymanych; PDF wprost z `show`.
+
 ## Dokumentacja
 
 - [docs/COMMANDS.md](docs/COMMANDS.md) — komendy, zasady, logowanie
