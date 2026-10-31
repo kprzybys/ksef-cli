@@ -78,8 +78,8 @@ z tego repozytorium (`.github/workflows/release.yml` przy tagu wersji), a nie kt
 gh attestation verify ksef-<wersja>-linux-x64.tar.gz --repo kprzybys/ksef-cli
 gh attestation verify ksef-<wersja>-linux-x64.tar.gz --repo kprzybys/ksef-cli --bundle ksef-<wersja>-linux-x64.tar.gz.sigstore.json
 
-# niezależnie od GitHuba — cosign (Sigstore) i plik podpisu z wydania
-cosign verify-blob-attestation --new-bundle-format --type slsaprovenance1 \
+# niezależnie od GitHuba — cosign 3+ (Sigstore) i plik podpisu z wydania; cosign 2.x: dodaj --new-bundle-format
+cosign verify-blob-attestation --type slsaprovenance1 \
   --bundle ksef-<wersja>-linux-x64.tar.gz.sigstore.json \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   --certificate-identity-regexp '^https://github\.com/kprzybys/ksef-cli/\.github/workflows/release\.yml@refs/tags/v' \
