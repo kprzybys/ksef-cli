@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.Globalization;
 using System.Text;
 using KSeF.Client.Core.Exceptions;
 using KSeF.Client.Core.Interfaces.Clients;
@@ -12,15 +13,23 @@ namespace KsefCli.Commands;
 /// `ksef upo` — Urzędowe Poświadczenie Odbioru: dla faktur (numer KSeF + numer sesji, w której je wysłano)
 /// albo zbiorcze dla całej sesji (`--collective`). Wejście w formacie wyniku `ksef send`
 /// (numer KSeF, plik, numer sesji), więc `ksef send *.xml | ksef upo -d upo/` działa wprost.
-/// UPO powstaje po zamknięciu sesji asynchronicznie — czekamy, aż sesja będzie przetworzona.
+/// UPO faktury KSeF wystawia razem z numerem KSeF — także przy wciąż otwartej sesji (np. innego programu).
+/// Zbiorcze UPO powstaje asynchronicznie dopiero po zamknięciu sesji (ręcznym albo po 12 h) — na nie czekamy.
 /// </summary>
 public static partial class UpoCommand
 {
-    // Kod statusu sesji: 200 — sesja przetworzona, UPO wygenerowane; 100 otwarta, 170 zamknięta (UPO w drodze).
+    // Kod statusu sesji: 100 otwarta, 170 zamknięta (zbiorcze UPO w drodze), 200 przetworzona (zbiorcze UPO gotowe).
+    private const int SessionOpen = 100;
+    private const int SessionClosed = 170;
     private const int SessionProcessed = 200;
-    private static readonly int[] SessionPending = [100, 170];
+
+    // KSeF 21178 „Nie znaleziono UPO”: ten sam kod, gdy faktura jest jeszcze w przetwarzaniu i gdy jej w sesji
+    // nie ma — rozstrzygają liczniki faktur w statusie sesji.
+    private const int UpoNotFound = 21178;
+
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(2);
-    private static readonly TimeSpan PollTimeout = TimeSpan.FromMinutes(3);
+    private static readonly TimeSpan InvoicePollTimeout = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan SessionPollTimeout = TimeSpan.FromMinutes(3);
 
     public sealed record UpoRequest(string? KsefNumber, string SessionReferenceNumber);
 
@@ -157,31 +166,28 @@ public static partial class UpoCommand
                 Directory.CreateDirectory(dir);
             }
 
-            Dictionary<string, SessionStatusResponse?> sessions = [];
             foreach (UpoRequest request in requests)
             {
                 string label = request.KsefNumber ?? request.SessionReferenceNumber;
-                if (!sessions.TryGetValue(request.SessionReferenceNumber, out SessionStatusResponse? status))
-                {
-                    status = await WaitForUpoAsync(ksef, tokens, request.SessionReferenceNumber, cancellationToken);
-                    sessions[request.SessionReferenceNumber] = status;
-                }
-                if (status is null)
-                {
-                    failed = true;
-                    continue;
-                }
-
                 try
                 {
                     List<(string Name, string Xml)> documents = [];
                     if (request.KsefNumber is { } number)
                     {
-                        documents.Add(($"{number}.upo.xml", await KsefRetry.OnRateLimitAsync(async () => await ksef.GetSessionInvoiceUpoByKsefNumberAsync(
-                            request.SessionReferenceNumber, number, await tokens.GetAsync(cancellationToken), cancellationToken), cancellationToken)));
+                        if (await FetchInvoiceUpoAsync(ksef, tokens, number, request.SessionReferenceNumber, cancellationToken) is not { } upo)
+                        {
+                            failed = true;
+                            continue;
+                        }
+                        documents.Add(($"{number}.upo.xml", upo));
                     }
                     else
                     {
+                        if (await WaitForSessionUpoAsync(ksef, tokens, request.SessionReferenceNumber, cancellationToken) is not { } status)
+                        {
+                            failed = true;
+                            continue;
+                        }
                         // Zbiorcze UPO dużej sesji bywa podzielone na strony.
                         List<UpoPageResponse> pages = [.. status.Upo?.Pages ?? []];
                         if (pages.Count == 0)
@@ -240,40 +246,87 @@ public static partial class UpoCommand
         return failed ? 1 : 0;
     }
 
-    /// <summary>Status sesji z gotowym UPO; null (z komunikatem) gdy sesja odrzucona albo UPO się nie doczekało.</summary>
-    private static async Task<SessionStatusResponse?> WaitForUpoAsync(IKSeFClient ksef, AccessTokenProvider tokens, string sessionReference, CancellationToken cancellationToken)
+    /// <summary>
+    /// UPO faktury: najpierw po prostu pobieramy. Przy „nie znaleziono UPO” czekamy tylko wtedy, gdy sesja ma jeszcze
+    /// faktury w przetwarzaniu; inaczej od razu błąd. Null (z komunikatem), gdy UPO nie ma.
+    /// </summary>
+    private static async Task<string?> FetchInvoiceUpoAsync(
+        IKSeFClient ksef, AccessTokenProvider tokens, string ksefNumber, string sessionReference, CancellationToken cancellationToken)
     {
-        DateTime deadline = DateTime.UtcNow + PollTimeout;
+        DateTime deadline = DateTime.UtcNow + InvoicePollTimeout;
         while (true)
         {
-            SessionStatusResponse status;
             try
             {
-                status = await KsefRetry.OnRateLimitAsync(async () =>
-                    await ksef.GetSessionStatusAsync(sessionReference, await tokens.GetAsync(cancellationToken), cancellationToken), cancellationToken);
+                return await KsefRetry.OnRateLimitAsync(async () => await ksef.GetSessionInvoiceUpoByKsefNumberAsync(
+                    sessionReference, ksefNumber, await tokens.GetAsync(cancellationToken), cancellationToken), cancellationToken);
             }
-            catch (KsefApiException ex)
+            catch (KsefApiException ex) when (KsefErrorCode(ex) == UpoNotFound)
             {
-                CliIo.Error($"sesja {sessionReference}: {ex.Message}");
-                return null;
+                SessionStatusResponse status = await GetSessionStatusAsync(ksef, tokens, sessionReference, cancellationToken);
+                if (status.Status.Code is not (SessionOpen or SessionClosed or SessionProcessed))
+                {
+                    CliIo.Error($"sesja {sessionReference}: KSeF {status.Status.Code} {status.Status.Description}");
+                    return null;
+                }
+                int pending = (status.InvoiceCount ?? 0) - (status.SuccessfulInvoiceCount ?? 0) - (status.FailedInvoiceCount ?? 0);
+                if (pending <= 0)
+                {
+                    CliIo.Error($"{ksefNumber}: KSeF nie ma UPO tej faktury w sesji {sessionReference} (faktura odrzucona albo wysłana w innej sesji): {ex.Message}");
+                    return null;
+                }
+                if (DateTime.UtcNow >= deadline)
+                {
+                    CliIo.Error($"{ksefNumber}: UPO niegotowe po {InvoicePollTimeout.TotalMinutes:0} min "
+                        + $"({pending} faktur sesji {sessionReference} w przetwarzaniu) — spróbuj później.");
+                    return null;
+                }
+                await Task.Delay(PollInterval, cancellationToken);
             }
-            if (status.Status.Code == SessionProcessed)
-            {
-                return status;
-            }
-            if (!SessionPending.Contains(status.Status.Code))
-            {
-                CliIo.Error($"sesja {sessionReference}: KSeF {status.Status.Code} {status.Status.Description}");
-                return null;
-            }
-            if (DateTime.UtcNow >= deadline)
-            {
-                CliIo.Error($"sesja {sessionReference}: UPO niegotowe po {PollTimeout.TotalMinutes:0} min (status {status.Status.Code} {status.Status.Description}) — spróbuj później.");
-                return null;
-            }
-            await Task.Delay(PollInterval, cancellationToken);
         }
     }
+
+    /// <summary>
+    /// Zbiorcze UPO: status sesji z gotowymi stronami; null (z komunikatem), gdy sesja otwarta, odrzucona albo UPO
+    /// się nie doczekało. Otwartej sesji nie zamykamy — mógł ją otworzyć inny program, który jeszcze wysyła.
+    /// </summary>
+    private static async Task<SessionStatusResponse?> WaitForSessionUpoAsync(IKSeFClient ksef, AccessTokenProvider tokens, string sessionReference, CancellationToken cancellationToken)
+    {
+        DateTime deadline = DateTime.UtcNow + SessionPollTimeout;
+        while (true)
+        {
+            SessionStatusResponse status = await GetSessionStatusAsync(ksef, tokens, sessionReference, cancellationToken);
+            switch (status.Status.Code)
+            {
+                case SessionProcessed:
+                    return status;
+                case SessionOpen:
+                    string until = status.ValidUntil is { } validUntil
+                        ? $" (wygaśnie {validUntil.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)})"
+                        : "";
+                    CliIo.Error($"sesja {sessionReference}: wciąż otwarta{until} — zbiorcze UPO powstaje po zamknięciu sesji przez program, "
+                        + "który ją otworzył, albo po jej wygaśnięciu. UPO pojedynczych faktur są dostępne już teraz (bez --collective).");
+                    return null;
+                case SessionClosed when DateTime.UtcNow < deadline:
+                    await Task.Delay(PollInterval, cancellationToken);
+                    break;
+                case SessionClosed:
+                    CliIo.Error($"sesja {sessionReference}: zbiorcze UPO niegotowe po {SessionPollTimeout.TotalMinutes:0} min "
+                        + $"(status {status.Status.Code} {status.Status.Description}) — spróbuj później.");
+                    return null;
+                default:
+                    CliIo.Error($"sesja {sessionReference}: KSeF {status.Status.Code} {status.Status.Description}");
+                    return null;
+            }
+        }
+    }
+
+    private static Task<SessionStatusResponse> GetSessionStatusAsync(IKSeFClient ksef, AccessTokenProvider tokens, string sessionReference, CancellationToken cancellationToken) =>
+        KsefRetry.OnRateLimitAsync(async () =>
+            await ksef.GetSessionStatusAsync(sessionReference, await tokens.GetAsync(cancellationToken), cancellationToken), cancellationToken);
+
+    private static int? KsefErrorCode(KsefApiException ex) =>
+        ex.ErrorResponse?.Exception?.ExceptionDetailList?.FirstOrDefault()?.ExceptionCode;
 
     // Numer strony UPO z odpowiedzi KSeF trafia do nazwy pliku — tylko bezpieczne znaki.
     [System.Text.RegularExpressions.GeneratedRegex("^[0-9A-Za-z-]{1,100}$", System.Text.RegularExpressions.RegexOptions.None, matchTimeoutMilliseconds: 1000)]

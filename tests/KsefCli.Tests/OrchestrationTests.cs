@@ -377,6 +377,20 @@ public class UpoOrchestrationTests
         dateUpdated = DateTimeOffset.UtcNow,
     });
 
+    /// <summary>Status sesji z licznikami faktur — z nich `upo` rozpoznaje, czy brak UPO faktury jest chwilowy.</summary>
+    private static FakeResponse SessionStatusWithCounts(int code, string description, int invoices, int? successful, int? failedInvoices = null) => FakeResponse.Json(new
+    {
+        status = new { code, description, details = Array.Empty<string>() },
+        invoiceCount = invoices,
+        successfulInvoiceCount = successful,
+        failedInvoiceCount = failedInvoices,
+        validUntil = DateTimeOffset.UtcNow.AddHours(11),
+        dateCreated = DateTimeOffset.UtcNow,
+        dateUpdated = DateTimeOffset.UtcNow,
+    });
+
+    private static FakeResponse UpoNotFound() => FakeResponse.Error(400, 21178, "Nie znaleziono UPO dla podanych kryteriów");
+
     private static string Upo(string id) => $"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Potwierdzenie><Id>{id}</Id></Potwierdzenie>";
 
     private static FakeKsef WithUpo(params FakeResponse[] statuses)
@@ -396,9 +410,10 @@ public class UpoOrchestrationTests
     }
 
     [Fact]
-    public async Task Upo_FromSendOutput_WaitsForSessionOnce_SavesEachInvoiceUpo()
+    public async Task Upo_FromSendOutput_OpenSession_SavesEachInvoiceUpoWithoutWaiting()
     {
-        using FakeKsef ksef = WithUpo(SessionStatus(170, "Sesja zamknięta"), SessionStatus(200, "Sesja przetworzona", "UPO-1"));
+        // UPO faktury KSeF wydaje razem z numerem KSeF, także przy otwartej sesji (np. innego programu, który jej nie zamknął).
+        using FakeKsef ksef = WithUpo(SessionStatus(100, "Sesja interaktywna otwarta"));
         using TempDir dir = LoggedIn();
         string outDir = dir.File("upo");
         byte[] sendOutput = Encoding.UTF8.GetBytes($"{KsefA}\ta.xml\t{Session}\n{KsefB}\tb.xml\t{Session}\n");
@@ -409,7 +424,51 @@ public class UpoOrchestrationTests
         Assert.Equal("", result.Stderr);
         Assert.Equal($"{outDir}/{KsefA}.upo.xml\n{outDir}/{KsefB}.upo.xml\n", result.Stdout);
         Assert.Equal(Upo(KsefB), File.ReadAllText(Path.Combine(outDir, $"{KsefB}.upo.xml")));
-        // Status sesji odpytywany do skutku, ale tylko raz na sesję, nie na fakturę.
+        Assert.Empty(ksef.RequestsTo("GET", $"sessions/{Session}"));
+    }
+
+    [Fact]
+    public async Task Upo_InvoiceStillProcessed_WaitsAndRetries()
+    {
+        using FakeKsef ksef = WithUpo(SessionStatusWithCounts(100, "Sesja interaktywna otwarta", invoices: 1, successful: null));
+        ksef.OnSequence("GET", $"sessions/{Session}/invoices/ksef/{KsefA}/upo", UpoNotFound(), FakeResponse.Xml(Upo(KsefA)));
+        using TempDir dir = LoggedIn();
+
+        CliResult result = await ksef.RunAsync(dir.Path, "upo", "--session", Session, KsefA);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal("", result.Stderr);
+        Assert.Equal(Upo(KsefA), result.Stdout);
+        Assert.Equal(2, ksef.RequestsTo("GET", $"sessions/{Session}/invoices/ksef/{KsefA}/upo").Count);
+        Assert.Single(ksef.RequestsTo("GET", $"sessions/{Session}"));
+    }
+
+    [Fact]
+    public async Task Upo_Collective_OpenSession_ExplainsAtOnce()
+    {
+        using FakeKsef ksef = WithUpo(SessionStatusWithCounts(100, "Sesja interaktywna otwarta", invoices: 1, successful: 1));
+        using TempDir dir = LoggedIn();
+
+        CliResult result = await ksef.RunAsync(dir.Path, "upo", "--collective", "--session", Session);
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Equal("", result.Stdout);
+        Assert.StartsWith($"ksef: sesja {Session}: wciąż otwarta (wygaśnie ", result.Stderr, StringComparison.Ordinal);
+        Assert.Contains("bez --collective", result.Stderr, StringComparison.Ordinal);
+        Assert.Single(ksef.RequestsTo("GET", $"sessions/{Session}"));
+        Assert.Empty(ksef.RequestsTo("GET", $"sessions/{Session}/upo/.*"));
+    }
+
+    [Fact]
+    public async Task Upo_Collective_ClosedSession_WaitsUntilProcessed()
+    {
+        using FakeKsef ksef = WithUpo(SessionStatus(170, "Sesja zamknięta"), SessionStatus(200, "Sesja przetworzona", "UPO-1"));
+        using TempDir dir = LoggedIn();
+
+        CliResult result = await ksef.RunAsync(dir.Path, "upo", "--collective", "--session", Session);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(Upo("UPO-1"), result.Stdout);
         Assert.Equal(2, ksef.RequestsTo("GET", $"sessions/{Session}").Count);
     }
 
@@ -482,21 +541,23 @@ public class UpoOrchestrationTests
     [Fact]
     public async Task Upo_SessionFailed_ReportsKsefStatus()
     {
+        // Brak UPO faktury + sesja odrzucona: powód podaje status sesji.
         using FakeKsef ksef = WithUpo(SessionStatus(445, "Błąd weryfikacji, brak poprawnych faktur"));
+        ksef.On("GET", $"sessions/{Session}/invoices/ksef/{KsefA}/upo", (_, _) => UpoNotFound());
         using TempDir dir = LoggedIn();
 
         CliResult result = await ksef.RunAsync(dir.Path, "upo", "--session", Session, KsefA);
 
         Assert.Equal(1, result.ExitCode);
         Assert.Equal($"ksef: sesja {Session}: KSeF 445 Błąd weryfikacji, brak poprawnych faktur\n", result.Stderr);
-        Assert.Empty(ksef.RequestsTo("GET", $"sessions/{Session}/invoices/.*"));
     }
 
     [Fact]
     public async Task Upo_InvoiceUpoMissing_OthersStillSaved()
     {
-        using FakeKsef ksef = WithUpo(SessionStatus(200, "Sesja przetworzona", "UPO-1"));
-        ksef.On("GET", $"sessions/{Session}/invoices/ksef/{KsefA}/upo", (_, _) => FakeResponse.Error(400, 21178, "Nie znaleziono UPO dla faktury."));
+        // Sesja bez faktur w przetwarzaniu: brak UPO jest ostateczny — błąd od razu, bez czekania.
+        using FakeKsef ksef = WithUpo(SessionStatusWithCounts(200, "Sesja przetworzona", invoices: 2, successful: 1, failedInvoices: 1));
+        ksef.On("GET", $"sessions/{Session}/invoices/ksef/{KsefA}/upo", (_, _) => UpoNotFound());
         using TempDir dir = LoggedIn();
         string outDir = dir.File("upo");
 
@@ -504,6 +565,7 @@ public class UpoOrchestrationTests
 
         Assert.Equal(1, result.ExitCode);
         Assert.Equal($"{outDir}/{KsefB}.upo.xml\n", result.Stdout);
-        Assert.StartsWith($"ksef: {KsefA}: ", result.Stderr);
+        Assert.StartsWith($"ksef: {KsefA}: KSeF nie ma UPO tej faktury w sesji {Session}", result.Stderr, StringComparison.Ordinal);
+        Assert.Single(ksef.RequestsTo("GET", $"sessions/{Session}/invoices/ksef/{KsefA}/upo"));
     }
 }

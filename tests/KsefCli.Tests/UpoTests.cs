@@ -3,6 +3,13 @@ using System.Security.Cryptography.Xml;
 using System.Text;
 using System.Xml;
 using KsefCli.Commands;
+using KSeF.Client.Api.Builders.Online;
+using KSeF.Client.Core.Interfaces.Clients;
+using KSeF.Client.Core.Interfaces.Services;
+using KSeF.Client.Core.Models.Invoices;
+using KSeF.Client.Core.Models.Sessions;
+using KSeF.Client.Core.Models.Sessions.OnlineSession;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace KsefCli.Tests;
 
@@ -244,6 +251,69 @@ public class UpoTestEnvironmentTests : IDisposable
 
         Assert.Equal(1, result.ExitCode);
         Assert.Contains(second[0], result.Stderr);
+    }
+
+    [Fact]
+    public async Task InvoiceUpo_FromSessionLeftOpen_ByAnotherProgram()
+    {
+        // Inny program (np. KsefInvoice) wysłał fakturę i nie zamknął sesji: UPO faktury jest dostępne od razu,
+        // zbiorcze UPO — dopiero po zamknięciu, więc `--collective` od razu to mówi zamiast czekać.
+        string nip = await LoginAsync();
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        string accessToken = SessionStore.Resolve("test", nip).AccessToken.Token;
+        await using ServiceProvider provider = await KsefServices.CreateWithCryptographyAsync(KsefEnvironment.Test, cancellationToken);
+        using IServiceScope scope = provider.CreateScope();
+        IKSeFClient client = scope.ServiceProvider.GetRequiredService<IKSeFClient>();
+        ICryptographyService crypto = scope.ServiceProvider.GetRequiredService<ICryptographyService>();
+
+        EncryptionData encryption = crypto.GetEncryptionData();
+        OpenOnlineSessionResponse session = await client.OpenOnlineSessionAsync(OpenOnlineSessionRequestBuilder.Create()
+            .WithFormCode(SystemCodeHelper.GetSystemCode(SystemCode.FA3), SystemCodeHelper.GetSchemaVersion(SystemCode.FA3), SystemCodeHelper.GetValue(SystemCode.FA3))
+            .WithEncryption(encryption.EncryptionInfo.EncryptedSymmetricKey, encryption.EncryptionInfo.InitializationVector, encryption.EncryptionInfo.PublicKeyId)
+            .Build(), accessToken, cancellationToken: cancellationToken);
+        try
+        {
+            byte[] xml = TestData.InvoiceToSend(nip);
+            byte[] encrypted = crypto.EncryptBytesWithAES256(xml, encryption.CipherKey, encryption.CipherIv);
+            FileMetadata plain = crypto.GetMetaData(xml);
+            FileMetadata cipher = crypto.GetMetaData(encrypted);
+            SendInvoiceResponse sent = await client.SendOnlineSessionInvoiceAsync(SendInvoiceOnlineSessionRequestBuilder.Create()
+                .WithInvoiceHash(plain.HashSHA, plain.FileSize)
+                .WithEncryptedDocumentHash(cipher.HashSHA, cipher.FileSize)
+                .WithEncryptedDocumentContent(Convert.ToBase64String(encrypted))
+                .Build(), session.ReferenceNumber, accessToken, cancellationToken);
+            string ksefNumber = await WaitForKsefNumberAsync(client, session.ReferenceNumber, sent.ReferenceNumber, accessToken);
+
+            string outDir = Path.Combine(runtime.Path, "upo");
+            CliResult upo = await Ksef("upo", "--session", session.ReferenceNumber, "-d", outDir, ksefNumber);
+            Assert.True(upo.ExitCode == 0, upo.Stderr);
+            XmlDocument document = Load(File.ReadAllBytes(Path.Combine(outDir, $"{ksefNumber}.upo.xml")));
+            AssertSignatureValid(document);
+            Assert.Equal([ksefNumber], KsefNumbersIn(document));
+
+            CliResult collective = await Ksef("upo", "--collective", "--session", session.ReferenceNumber);
+            Assert.Equal(1, collective.ExitCode);
+            Assert.Contains("wciąż otwarta", collective.Stderr, StringComparison.Ordinal);
+        }
+        finally
+        {
+            await client.CloseOnlineSessionAsync(session.ReferenceNumber, accessToken, CancellationToken.None);
+        }
+    }
+
+    private static async Task<string> WaitForKsefNumberAsync(IKSeFClient client, string session, string invoice, string accessToken)
+    {
+        DateTime deadline = DateTime.UtcNow.AddMinutes(1);
+        while (true)
+        {
+            SessionInvoice status = await client.GetSessionInvoiceAsync(session, invoice, accessToken, TestContext.Current.CancellationToken);
+            if (status.KsefNumber is { } number)
+            {
+                return number;
+            }
+            Assert.True(DateTime.UtcNow < deadline, $"faktura {invoice}: status {status.Status.Code} {status.Status.Description}");
+            await Task.Delay(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+        }
     }
 }
 
