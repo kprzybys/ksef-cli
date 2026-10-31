@@ -120,6 +120,7 @@ Pełna lista: [docs/ROADMAP.md](docs/ROADMAP.md).
 - [docs/INSTALL.md](docs/INSTALL.md) — wymagania, pakiety, sprawdzone dystrybucje, budowanie wydań
 - [docs/ROADMAP.md](docs/ROADMAP.md) — plan kolejnych wersji
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — budowanie ze źródeł, Native AOT, FA(3), testy, jakość kodu
+- [CONTRIBUTING.md](CONTRIBUTING.md) — jak zgłaszać błędy i propozycje, zasady zmian
 
 ## Bezpieczeństwo
 

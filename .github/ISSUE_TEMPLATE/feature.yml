@@ -1,0 +1,22 @@
+name: Propozycja
+description: Nowa funkcja albo zmiana zachowania
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Najpierw zajrzyj do [planu rozwoju](https://github.com/kprzybys/ksef-cli/blob/main/docs/ROADMAP.md) —
+        może to już tam jest. `ksef` robi jedną rzecz: przenosi faktury między plikami a KSeF; wystawianie
+        faktur, księgowość i bazy danych zostają innym narzędziom.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Jaki problem rozwiązuje
+      description: Co próbujesz zrobić i czego dziś brakuje
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Propozycja
+      description: Np. jak wyglądałaby komenda i jej wynik (stdout, stderr, kod wyjścia)

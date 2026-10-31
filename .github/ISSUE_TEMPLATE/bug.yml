@@ -1,0 +1,46 @@
+name: Błąd
+description: Coś działa inaczej, niż opisuje dokumentacja
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Repo jest publiczne.** Nie wklejaj tokenów, PIN-ów, certyfikatów ani kluczy, prawdziwych faktur,
+        numerów KSeF ani NIP-ów — zamień je na fikcyjne (np. NIP 1234563218). Jeśli to luka bezpieczeństwa,
+        zgłoś ją prywatnie: zakładka Security → Report a vulnerability.
+  - type: input
+    id: version
+    attributes:
+      label: Wersja
+      description: Wynik `ksef --version`
+      placeholder: "0.1.2"
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Środowisko KSeF
+      options: ["test", "demo", "prod", "bez sieci (validate/show)"]
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: System
+      description: Dystrybucja i architektura, np. `Ubuntu 24.04 x64`
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Komenda i wynik
+      description: Wywołanie, komunikat ze stderr i kod wyjścia (`echo $?`) — bez sekretów i danych firm.
+      render: console
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Czego się spodziewałeś
+    validations:
+      required: true

@@ -68,6 +68,13 @@ install -Dm755 ksef-<wersja>-linux-x64/ksef ~/.local/bin/ksef
 ksef --help
 ```
 
+Suma SHA-256 chroni przed uszkodzonym pobraniem. Od wersji 0.1.3 archiwa mają też atestację pochodzenia
+(GitHub, Sigstore): potwierdza, że plik zbudował workflow wydań z tego repozytorium, a nie ktoś inny.
+
+```bash
+gh attestation verify ksef-<wersja>-linux-x64.tar.gz --repo kprzybys/ksef-cli
+```
+
 ## Budowanie ze źródeł
 
 ```bash
