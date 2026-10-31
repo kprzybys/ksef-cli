@@ -68,11 +68,22 @@ install -Dm755 ksef-<wersja>-linux-x64/ksef ~/.local/bin/ksef
 ksef --help
 ```
 
-Suma SHA-256 chroni przed uszkodzonym pobraniem. Od wersji 0.1.3 archiwa mają też atestację pochodzenia
-(GitHub, Sigstore): potwierdza, że plik zbudował workflow wydań z tego repozytorium, a nie ktoś inny.
+Suma SHA-256 chroni tylko przed uszkodzonym pobraniem — kto podmieni archiwum, podmieni i sumę. Od wersji 0.1.3
+każde archiwum ma też **podpis pochodzenia** (atestacja SLSA w otwartym standardzie Sigstore, plik
+`ksef-<wersja>-linux-<arch>.tar.gz.sigstore.json` w wydaniu). Potwierdza, że archiwum zbudował workflow wydań
+z tego repozytorium (`.github/workflows/release.yml` przy tagu wersji), a nie ktoś inny. Sprawdzenie:
 
 ```bash
+# GitHub CLI — podpis z rejestru GitHuba albo z pliku z wydania (--bundle)
 gh attestation verify ksef-<wersja>-linux-x64.tar.gz --repo kprzybys/ksef-cli
+gh attestation verify ksef-<wersja>-linux-x64.tar.gz --repo kprzybys/ksef-cli --bundle ksef-<wersja>-linux-x64.tar.gz.sigstore.json
+
+# niezależnie od GitHuba — cosign (Sigstore) i plik podpisu z wydania
+cosign verify-blob-attestation --new-bundle-format --type slsaprovenance1 \
+  --bundle ksef-<wersja>-linux-x64.tar.gz.sigstore.json \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp '^https://github\.com/kprzybys/ksef-cli/\.github/workflows/release\.yml@refs/tags/v' \
+  ksef-<wersja>-linux-x64.tar.gz
 ```
 
 ## Budowanie ze źródeł
