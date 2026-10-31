@@ -163,6 +163,30 @@ public class SendOrchestrationTests
     }
 
     [Fact]
+    public async Task Send_ResponseLost_FindsInvoiceInSessionByHash()
+    {
+        // KSeF przyjął fakturę 2, ale odpowiedź się urwała. Zamiast zgłaszać ją jako niewysłaną (ponowienie po
+        // zmianie numeru dałoby duplikat), ksef szuka jej w sesji po skrócie SHA-256 pliku.
+        using FakeKsef ksef = OnlineSession(invoice: n => n == 2 ? FakeResponse.Abort : null);
+        (TempDir dir, string[] files) = Invoices(3);
+        using TempDir _ = dir;
+        string lostHash = Convert.ToBase64String(SHA256.HashData(File.ReadAllBytes(files[1])));
+        ksef.On("GET", $"sessions/{Session}/invoices", (_, _) => FakeResponse.Json(new
+        {
+            invoices = new[] { new { ordinalNumber = 2, referenceNumber = InvoiceReference(2), invoiceHash = lostHash, invoicingDate = DateTimeOffset.UtcNow, status = new { code = 100, description = "W trakcie" } } },
+        }));
+
+        CliResult result = await ksef.RunAsync(dir.Path, ["send", .. files]);
+
+        Assert.True(result.ExitCode == 0, result.Stderr);
+        Assert.Equal(
+            $"{KsefNumber(1)}\t{files[0]}\t{Session}\n{KsefNumber(2)}\t{files[1]}\t{Session}\n{KsefNumber(3)}\t{files[2]}\t{Session}\n",
+            result.Stdout);
+        Assert.Contains($"{files[1]}: odpowiedź KSeF na wysyłkę nie dotarła, ale faktura jest w sesji {Session}", result.Stderr);
+        Assert.Equal(3, ksef.RequestsTo("POST", $"sessions/online/{Session}/invoices").Count);
+    }
+
+    [Fact]
     public async Task Send_StatusUnavailable_ReportsInvoiceReferenceForLaterCheck()
     {
         using FakeKsef ksef = OnlineSession(status: n => n == 1 ? FakeResponse.Abort : InvoiceStatus(200, "Sukces", KsefNumber(n)));

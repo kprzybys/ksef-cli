@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.Security.Cryptography;
 using Ksef.Fa3;
 using KSeF.Client.Api.Builders.Online;
 using KSeF.Client.Core.Exceptions;
@@ -155,6 +156,8 @@ public static class SendCommand
         // faktur muszą trafić na wyjście, bo ponowna wysyłka skończy się duplikatem (440).
         List<SendResult> results = [];
         List<(int Index, string Name, string Session, string Reference)> sent = [];
+        // Odpowiedź na wysyłkę nie dotarła (sieć, limit czasu) — KSeF mógł fakturę przyjąć.
+        List<(int Index, string Name, string Session, byte[] Xml, Exception Error, string Message)> unknown = [];
         for (int index = 0; index < invoices.Count; index++)
         {
             (string name, byte[] xml) = invoices[index];
@@ -176,10 +179,35 @@ public static class SendCommand
                     CliIo.Error($"sesja {session.Reference} tymczasowo niedostępna (KSeF {SessionTemporarilyUnavailable}) — wysyłam dalej w nowej sesji.");
                     session = await OpenSessionAsync(ksef, crypto, tokens, cancellationToken);
                 }
+                catch (Exception ex) when (IsResponseLost(ex) && CliErrors.Describe(ex) is { } message)
+                {
+                    unknown.Add((index, name, session.Reference, xml, ex, message));
+                    break;
+                }
                 catch (Exception ex) when (CliErrors.Describe(ex) is { } message)
                 {
                     results.Add(Failed(index, name, session.Reference, null, ex, message));
                     break;
+                }
+            }
+        }
+
+        // Zamiast zgadywać: faktura jest w sesji, jeśli KSeF zna jej skrót. Inaczej ponowna wysyłka po zmianie
+        // numeru faktury (P_2) dałaby duplikat, którego KSeF już nie wykryje.
+        foreach (var group in unknown.GroupBy(u => u.Session, StringComparer.Ordinal))
+        {
+            Dictionary<string, string> inSession = await InvoicesInSessionAsync(ksef, tokens, group.Key, cancellationToken);
+            foreach ((int index, string name, string sessionReference, byte[] xml, Exception error, string message) in group)
+            {
+                if (inSession.TryGetValue(Convert.ToBase64String(SHA256.HashData(xml)), out string? reference))
+                {
+                    CliIo.Error($"{name}: odpowiedź KSeF na wysyłkę nie dotarła, ale faktura jest w sesji {sessionReference} — czekam na jej status.");
+                    sent.Add((index, name, sessionReference, reference));
+                    used.Add(sessionReference);
+                }
+                else
+                {
+                    results.Add(Failed(index, name, sessionReference, null, error, message));
                 }
             }
         }
@@ -226,6 +254,42 @@ public static class SendCommand
         return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, zone).Date;
     }
 
+    /// <summary>Skrót SHA-256 (Base64) → numer referencyjny faktur, które KSeF zarejestrował w sesji; przy błędzie pusto.</summary>
+    private static async Task<Dictionary<string, string>> InvoicesInSessionAsync(
+        IKSeFClient ksef, AccessTokenProvider tokens, string sessionReference, CancellationToken cancellationToken)
+    {
+        Dictionary<string, string> invoices = new(StringComparer.Ordinal);
+        // Lista sesji bywa chwilę opóźniona względem wysyłki.
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            try
+            {
+                string? continuation = null;
+                do
+                {
+                    SessionInvoicesResponse page = await KsefRetry.OnRateLimitAsync(async () =>
+                        await ksef.GetSessionInvoicesAsync(sessionReference, await tokens.GetAsync(cancellationToken),
+                            continuationToken: continuation, cancellationToken: cancellationToken), cancellationToken);
+                    foreach (SessionInvoice invoice in page.Invoices ?? [])
+                    {
+                        if (invoice.InvoiceHash is { } hash && invoice.ReferenceNumber is { } reference)
+                        {
+                            invoices[hash] = reference;
+                        }
+                    }
+                    continuation = page.ContinuationToken;
+                }
+                while (!string.IsNullOrEmpty(continuation));
+                return invoices;
+            }
+            catch (Exception ex) when (CliErrors.Describe(ex) is not null)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+            }
+        }
+        return invoices;
+    }
+
     private sealed record OnlineSession(string Reference, EncryptionData Encryption);
 
     private static async Task<OnlineSession> OpenSessionAsync(
@@ -258,6 +322,12 @@ public static class SendCommand
             .WithEncryptedDocumentContent(Convert.ToBase64String(encrypted))
             .Build();
     }
+
+    // Sieć, limit czasu albo urwana odpowiedź 2xx (biblioteka MF zgłasza ją jako KsefApiException bez kodu KSeF):
+    // nie wiadomo, czy KSeF fakturę przyjął. Błąd z kodem KSeF albo statusem HTTP 4xx/5xx to pewne odrzucenie.
+    private static bool IsResponseLost(Exception ex) =>
+        ex is not KsefApiException api
+        || (KsefCode(api) is null && api.StatusCode is >= System.Net.HttpStatusCode.OK and < System.Net.HttpStatusCode.MultipleChoices);
 
     private static int? KsefCode(KsefApiException? ex) => ex?.ErrorResponse?.Exception?.ExceptionDetailList?.FirstOrDefault()?.ExceptionCode;
 
