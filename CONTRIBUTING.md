@@ -28,8 +28,10 @@ make check     # lint + build + testy (bez sieci)
   awarie (zerwane połączenie, 21184, limity). Testy na żywym KSeF tylko na środowisku TEST (`make test-e2e`).
 - **Nigdy na produkcji** i nigdy z prawdziwymi danymi: tylko fikcyjne NIP-y (np. `5908996669`, `1234563218`),
   bez prawdziwych faktur, numerów KSeF, tokenów ani nazw prywatnych serwerów — w kodzie, testach i opisach commitów.
+- Każda nowa funkcja i każda poprawka błędu przychodzi z testem, który bez niej nie przechodzi.
 - Analizatory działają jako błędy kompilacji; `make check` musi przejść.
-- Komunikaty i dokumentacja po polsku, krótko i konkretnie.
+- Komunikaty i dokumentacja po polsku, krótko i konkretnie. Zgłoszenia i PR-y po angielsku też są mile widziane
+  (bug reports and pull requests in English are welcome).
 - Kod biblioteki MF (`external/`), schematy (`schemas/`) i arkusze MF (`stylesheets/`) zostają bajt w bajt —
   poprawki biblioteki zgłaszaj w [CIRFMF/ksef-client-csharp](https://github.com/CIRFMF/ksef-client-csharp).
 
