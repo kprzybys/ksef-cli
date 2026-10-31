@@ -34,11 +34,14 @@ internal static class Ksef
     public static Task<CliResult> RunAsync(string runtimeDir, byte[]? stdin, IReadOnlyDictionary<string, string>? environment, params string[] args) =>
         RunCoreAsync(runtimeDir, stdin, environment, null, args);
 
-    /// <summary>Jak RunAsync, ale po `after` wysyła SIGINT (jak Ctrl+C albo `timeout -s INT` w cronie) — do testów przerwania.</summary>
-    public static Task<CliResult> RunInterruptedAsync(string runtimeDir, TimeSpan after, IReadOnlyDictionary<string, string>? environment, params string[] args) =>
-        RunCoreAsync(runtimeDir, null, environment, after, args);
+    /// <summary>
+    /// Jak RunAsync, ale gdy zakończy się `interruptWhen`, wysyła SIGINT (jak Ctrl+C albo `timeout -s INT` w cronie) —
+    /// do testów przerwania. Zdarzenie, nie stały czas: wolny runner (JIT, Intel) potrafi startować dłużej niż kilka sekund.
+    /// </summary>
+    public static Task<CliResult> RunInterruptedAsync(string runtimeDir, Task interruptWhen, IReadOnlyDictionary<string, string>? environment, params string[] args) =>
+        RunCoreAsync(runtimeDir, null, environment, interruptWhen, args);
 
-    private static async Task<CliResult> RunCoreAsync(string runtimeDir, byte[]? stdin, IReadOnlyDictionary<string, string>? environment, TimeSpan? interruptAfter, params string[] args)
+    private static async Task<CliResult> RunCoreAsync(string runtimeDir, byte[]? stdin, IReadOnlyDictionary<string, string>? environment, Task? interruptWhen, params string[] args)
     {
         ProcessStartInfo start = new(Binary ?? "dotnet")
         {
@@ -67,7 +70,7 @@ internal static class Ksef
         }
 
         using Process process = Process.Start(start) ?? throw new InvalidOperationException("Nie uruchomiono ksef.");
-        Task interrupt = interruptAfter is { } after ? InterruptAsync(process, after) : Task.CompletedTask;
+        Task interrupt = interruptWhen is null ? Task.CompletedTask : InterruptAsync(process, interruptWhen);
         Task<string> stderr = process.StandardError.ReadToEndAsync();
         using MemoryStream stdout = new();
         Task copyStdout = process.StandardOutput.BaseStream.CopyToAsync(stdout);
@@ -94,9 +97,9 @@ internal static class Ksef
     }
 
     // `kill` zamiast `timeout` z coreutils — tego drugiego nie ma na macOS.
-    private static async Task InterruptAsync(Process process, TimeSpan after)
+    private static async Task InterruptAsync(Process process, Task when)
     {
-        await Task.Delay(after);
+        await Task.WhenAny(when, process.WaitForExitAsync());
         if (!process.HasExited)
         {
             using Process kill = Process.Start("kill", ["-INT", process.Id.ToString(CultureInfo.InvariantCulture)]);
