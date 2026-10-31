@@ -16,7 +16,9 @@ rsync -a --delete --exclude=bin/ --exclude=obj/ --exclude=dist/ --exclude=.git .
 # Wyniki poprzednich przebiegów na hoście nie wracają razem z nowymi.
 ssh "$host" "rm -rf ksef-build/dist/release ksef-build/dist/distro-test"
 # shellcheck disable=SC2029 # argumenty make rozwijane lokalnie celowo
-ssh "$host" "cd ksef-build && PATH=\$HOME/.dotnet:\$PATH DOTNET_SDK_VERSION=$sdk make $* KSEF_VERSION=$version"
+# Bez ponownego użycia procesów MSBuild: wiszące węzły z poprzednich przebiegów potrafią wywrócić `dotnet test`
+# na starcie („Internal CLR error”), a host służy też innym.
+ssh "$host" "cd ksef-build && PATH=\$HOME/.dotnet:\$PATH MSBUILDDISABLENODEREUSE=1 DOTNET_CLI_USE_MSBUILD_SERVER=0 DOTNET_SDK_VERSION=$sdk make $* KSEF_VERSION=$version"
 mkdir -p dist
 for dir in release distro-test; do
     if ssh "$host" "test -d ksef-build/dist/$dir"; then

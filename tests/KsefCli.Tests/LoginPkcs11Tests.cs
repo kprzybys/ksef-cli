@@ -263,7 +263,10 @@ public class LoginKeyOptionTests
             "login", "--nip", "5908996669", "--cert", cert, "--key", SoftHsmToken.KeyUri, "--pin-file", pin, "--key-via", via);
 
         Assert.Equal(1, result.ExitCode);
-        Assert.Contains(expected, result.Stderr, StringComparison.Ordinal);
+        // OpenSSL 4 nie ma engine'ów wcale — wtedy zamiast „zainstaluj libp11” od razu provider. Którego OpenSSL użyje
+        // ksef, rozstrzyga jego proces (binarka AOT i dotnet potrafią na tym samym hoście załadować różne), nie test.
+        string[] accepted = via == "engine" ? [expected, "nie ma engine'ów (usunięte od OpenSSL 4)"] : [expected];
+        Assert.Contains(accepted, a => result.Stderr.Contains(a, StringComparison.Ordinal));
         Assert.Contains(alternative, result.Stderr, StringComparison.Ordinal);
     }
 }

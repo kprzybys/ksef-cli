@@ -21,6 +21,9 @@ public static partial class LoginCommand
     // dlatego przed 3.2 domyślnie engine. Wartość z SafeEvpPKeyHandle.OpenSslVersion: 0xMNN00PP0.
     private const long FirstProviderDefaultVersion = 0x3020_0000;
 
+    // OpenSSL 4 usunął engine'y (ENGINE API) — zostaje tylko provider.
+    private const long FirstVersionWithoutEngines = 0x4000_0000;
+
     private sealed record HardwareKey(string Uri, string? PinFile, string? Via);
 
     /// <summary>Certyfikat z kluczem z urządzenia i PIN — do maskowania komunikatów przy kolejnych operacjach.</summary>
@@ -62,6 +65,12 @@ public static partial class LoginCommand
         bool viaProvider = key.Via is { } via
             ? string.Equals(via, "provider", StringComparison.Ordinal)
             : SafeEvpPKeyHandle.OpenSslVersion >= FirstProviderDefaultVersion;
+        if (!viaProvider && SafeEvpPKeyHandle.OpenSslVersion >= FirstVersionWithoutEngines)
+        {
+            CliIo.Error($"{key.Uri}: OpenSSL {SafeEvpPKeyHandle.OpenSslVersion >> 28} nie ma engine'ów (usunięte od OpenSSL 4) — "
+                + "użyj --key-via provider albo pomiń --key-via (pakiet pkcs11-provider).");
+            return false;
+        }
         // Dostępność providera przed pierwszą próbą, nie po niej — bez dodatkowej inicjalizacji modułu po błędzie PIN-u.
         if (viaProvider && !OpenSslProvider.IsAvailable("pkcs11"))
         {
