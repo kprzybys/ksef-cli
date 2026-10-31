@@ -118,7 +118,14 @@ public class SessionStoreTests
         using RuntimeDirScope scope = new();
         Environment.SetEnvironmentVariable("XDG_RUNTIME_DIR", null);
 
-        Assert.Throws<SessionException>(() => SessionStore.Directory);
+        if (OperatingSystem.IsMacOS())
+        {
+            Assert.StartsWith(Environment.GetEnvironmentVariable("TMPDIR")!, SessionStore.Directory, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Throws<SessionException>(() => SessionStore.Directory);
+        }
     }
 
     [Fact]

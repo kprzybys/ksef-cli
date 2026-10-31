@@ -85,6 +85,10 @@ internal sealed class SoftHsmToken : IDisposable
 
     private static string? FindUnavailable()
     {
+        if (OperatingSystem.IsMacOS())
+        {
+            return "PKCS#11 przez OpenSSL tylko na Linuksie";
+        }
         try
         {
             if (Run("softhsm2-util", ["--version"], null).Exit != 0)
@@ -263,6 +267,11 @@ public class LoginKeyOptionTests
             "login", "--nip", "5908996669", "--cert", cert, "--key", SoftHsmToken.KeyUri, "--pin-file", pin, "--key-via", via);
 
         Assert.Equal(1, result.ExitCode);
+        if (OperatingSystem.IsMacOS())
+        {
+            Assert.Contains("PKCS#11) działa na razie tylko na Linuksie", result.Stderr, StringComparison.Ordinal);
+            return;
+        }
         // OpenSSL 4 nie ma engine'ów wcale — wtedy zamiast „zainstaluj libp11” od razu provider. Którego OpenSSL użyje
         // ksef, rozstrzyga jego proces (binarka AOT i dotnet potrafią na tym samym hoście załadować różne), nie test.
         string[] accepted = via == "engine" ? [expected, "nie ma engine'ów (usunięte od OpenSSL 4)"] : [expected];

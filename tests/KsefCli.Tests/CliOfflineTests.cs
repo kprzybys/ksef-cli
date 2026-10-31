@@ -468,11 +468,13 @@ public class CliOfflineTests : IDisposable
     [Fact]
     public async Task Login_WithoutRuntimeDir_FailsBeforeContactingKsef()
     {
-        // Pusty XDG_RUNTIME_DIR: błąd przed odczytem certyfikatu (garbage na stdin by go inaczej zgłosił) i przed siecią.
-        CliResult result = await Ksef.RunAsync("", "abc"u8.ToArray(), "login", "--nip", "5908996669", "--cert", "-");
+        // Pusty XDG_RUNTIME_DIR (na macOS TMPDIR): błąd przed odczytem certyfikatu (garbage na stdin by go inaczej
+        // zgłosił) i przed siecią.
+        CliResult result = await Ksef.RunAsync("", "abc"u8.ToArray(), new Dictionary<string, string> { ["TMPDIR"] = "" },
+            "login", "--nip", "5908996669", "--cert", "-");
 
         AssertCleanError(result);
-        Assert.Contains("XDG_RUNTIME_DIR", result.Stderr);
+        Assert.Contains(OperatingSystem.IsMacOS() ? "TMPDIR" : "XDG_RUNTIME_DIR", result.Stderr);
     }
 
     // --- środowiska i pierwsze uruchomienie ---
@@ -589,7 +591,9 @@ public class CliOfflineTests : IDisposable
             RedirectStandardError = true,
             UseShellExecute = false,
         };
-        foreach (string arg in new[] { "-qec", command, "/dev/null" })
+        // util-linux: script -qec POLECENIE PLIK; macOS (BSD): script -q PLIK POLECENIE… (kod wyjścia zawsze z dziecka).
+        string[] args = OperatingSystem.IsMacOS() ? ["-q", "/dev/null", "sh", "-c", command] : ["-qec", command, "/dev/null"];
+        foreach (string arg in args)
         {
             start.ArgumentList.Add(arg);
         }

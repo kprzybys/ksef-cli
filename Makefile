@@ -1,7 +1,7 @@
-# Budowanie i testy ksef. Native AOT wymaga clang i zlib (pakiety clang, zlib1g-dev);
-# `ksef show` w czasie działania potrzebuje libxslt (pakiet libxslt1.1).
-# Architektura tej maszyny (Native AOT: x64 albo arm64); inna — make aot RID=...
-RID ?= linux-$(if $(filter aarch64 arm64,$(shell uname -m)),arm64,x64)
+# Budowanie i testy ksef. Native AOT wymaga clang i zlib (Linux: pakiety clang, zlib1g-dev; macOS: Xcode
+# Command Line Tools); `ksef show` w czasie działania potrzebuje libxslt (Linux: libxslt1.1; macOS: w systemie).
+# System i architektura tej maszyny (Native AOT: linux/osx, x64/arm64); inne — make aot RID=...
+RID ?= $(if $(filter Darwin,$(shell uname -s)),osx,linux)-$(if $(filter aarch64 arm64,$(shell uname -m)),arm64,x64)
 AOT_DIR := dist/aot
 PREFIX ?= $(HOME)/.local
 
@@ -52,7 +52,7 @@ else
 endif
 
 install: aot
-	install -Dm755 $(AOT_DIR)/ksef $(PREFIX)/bin/ksef
+	mkdir -p $(PREFIX)/bin && install -m755 $(AOT_DIR)/ksef $(PREFIX)/bin/ksef
 
 clean:
 	rm -rf dist

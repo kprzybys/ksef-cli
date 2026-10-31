@@ -5,8 +5,9 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 
-// Narzędzie dla Linuksa: prawa plików (0600/0700), $XDG_RUNTIME_DIR.
+// Narzędzie dla Linuksa i macOS: prawa plików (0600/0700), katalog sesji ($XDG_RUNTIME_DIR, na macOS $TMPDIR).
 [assembly: SupportedOSPlatform("linux")]
+[assembly: SupportedOSPlatform("macos")]
 
 namespace KsefCli;
 
