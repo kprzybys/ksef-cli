@@ -8,6 +8,7 @@ w KSeF 2.0 — na oficjalnej bibliotece Ministerstwa Finansów, w jednej natywne
 [![Wydanie](https://img.shields.io/github/v/release/kprzybys/ksef-cli?label=wydanie)](https://github.com/kprzybys/ksef-cli/releases)
 [![Licencja: MIT](https://img.shields.io/badge/licencja-MIT-blue)](LICENSE)
 ![Linux x64 | arm64](https://img.shields.io/badge/Linux-x64%20%7C%20arm64-informational)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/kprzybys/ksef-cli/badge)](https://scorecard.dev/viewer/?uri=github.com/kprzybys/ksef-cli)
 
 *A command-line client for Poland's national e-invoicing system (KSeF 2.0), built on the official Ministry
 of Finance library and shipped as a single native binary for Linux.*
