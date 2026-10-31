@@ -29,6 +29,8 @@ potoki, sekrety nigdy w argumentach.
 
 ## Priorytet średni
 
+- [ ] macOS: notaryzacja Apple (podpis Developer ID w CI) i formuła Homebrew — bez blokady Gatekeepera przy pobraniu
+  przeglądarką.
 - [ ] Tryby offline (offline24, niedostępność, awaria) i KOD II „CERTYFIKAT” w `show`; terminy dosłania w dniach
   roboczych; korekta techniczna (`hashOfCorrectedInvoice`).
 - [ ] `ksef cert enroll|list|revoke` — wnioski o certyfikat KSeF (Authentication i Offline), także z kluczem na
@@ -38,11 +40,18 @@ potoki, sekrety nigdy w argumentach.
 
 ## Priorytet niski
 
+- [ ] PKCS#11 na macOS (karta/token przez kryptografię Apple albo OpenSSL z Homebrew).
 - [ ] Kod wyjścia 2 dla błędu użycia (zgodnie z konwencją), uzupełnianie poleceń w powłoce (completion).
 - [ ] `ksef --version` z wersją biblioteki MF.
 - [ ] Lista i unieważnianie aktywnych sesji uwierzytelnienia; `upo --json`.
 - [ ] Uprawnienia (np. nadanie biuru rachunkowemu), limity API, dane testowe (tylko TEST).
 - [ ] `cert verify` — kontrola certyfikatu i klucza (próbny podpis, w tym KOD II).
+
+## Zrobione w 0.1.4
+
+- [x] macOS: binarki `osx-arm64` (Apple Silicon) i `osx-x64` (Intel), bez pakietów (ICU, kryptografia i libxslt
+  z systemu); CI i wydanie na runnerach macOS z atestacją i SBOM. Bez PKCS#11 i bez notaryzacji Apple — na później.
+- [x] SBOM (CycloneDX) z podpisem przy każdym archiwum; instalator .NET w `install-deps.sh` przypięty skrótem.
 
 ## Zrobione w 0.1.2
 
