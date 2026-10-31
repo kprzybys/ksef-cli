@@ -95,14 +95,15 @@ ksef show faktura.xml -e prod -k "$(cut -f1 wyslane.tsv)" -o faktura.html   # dl
 
 ## Plany
 
-Kolejność wg ważności dla firm (z przeglądu wymagań MF): sesje wsadowe i faktury z załącznikiem; tryby
-offline z kodem „CERTYFIKAT” (KOD II); kontrola arytmetyki VAT w `validate`; wnioski o certyfikat KSeF
-i zarządzanie tokenami KSeF; przyrostowa synchronizacja faktur otrzymanych; PDF wprost z `show`.
+Najbliżej: eksport z przyrostowym pobieraniem faktur, sesje wsadowe i faktury z załącznikiem, kontrola
+arytmetyki VAT w `validate`; dalej tryby offline z kodem „CERTYFIKAT” (KOD II), certyfikaty i tokeny KSeF.
+Pełna lista: [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Dokumentacja
 
 - [docs/COMMANDS.md](docs/COMMANDS.md) — komendy, zasady, logowanie
 - [docs/INSTALL.md](docs/INSTALL.md) — wymagania, pakiety, sprawdzone dystrybucje, budowanie wydań
+- [docs/ROADMAP.md](docs/ROADMAP.md) — plan kolejnych wersji
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — budowanie ze źródeł, Native AOT, FA(3), testy, jakość kodu
 
 ## Bezpieczeństwo
