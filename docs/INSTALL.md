@@ -74,8 +74,8 @@ ksef --help
 ```
 
 - **Gatekeeper.** Binarka nie jest jeszcze notaryzowana przez Apple. Pobrana przez `curl` (jak wyżej) uruchamia się
-  od razu; pobrana przeglądarką dostaje znacznik kwarantanny i macOS jej nie otworzy — wtedy
-  `xattr -d com.apple.quarantine ~/.local/bin/ksef`. Pochodzenie archiwum sprawdzisz tak samo jak na Linuksie
+  od razu; pobrana przeglądarką dostaje znacznik kwarantanny i macOS ubija ją przy starcie (w terminalu tylko
+  `zsh: killed`) — wtedy `xattr -d com.apple.quarantine ~/.local/bin/ksef`. Pochodzenie archiwum sprawdzisz tak samo jak na Linuksie
   (atestacja, [niżej](#instalacja-z-wydania)).
 - **zsh** (domyślna powłoka macOS) nie traktuje `#` w wierszu poleceń jako komentarza — przykłady z komentarzami
   z tej dokumentacji wklejaj po `setopt interactivecomments` (na stałe: dopisz do `~/.zshrc`).
