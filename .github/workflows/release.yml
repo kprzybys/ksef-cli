@@ -73,15 +73,24 @@ jobs:
           scripts/test-distros.sh dist/release/ksef-*-linux-${{ matrix.arch }}/ksef ${{ matrix.images }} | tee dist/distros.md
           cat dist/distros.md >> "$GITHUB_STEP_SUMMARY"
           ! grep -q "BŁĄD" dist/distros.md
-      # Każdy może sprawdzić, że archiwum zbudował ten workflow z tego repo:
-      #   gh attestation verify ksef-<wersja>-linux-<arch>.tar.gz --repo kprzybys/ksef-cli
+      # Atestacja pochodzenia (SLSA build provenance, Sigstore): każdy może sprawdzić, że archiwum zbudował
+      # ten workflow z tego repo — `gh attestation verify` albo niezależnie `cosign` (docs/INSTALL.md).
+      # Plik podpisu (.sigstore.json) idzie do wydania obok archiwum, żeby sprawdzenie nie wymagało GitHuba.
       - name: Atestacja pochodzenia
+        id: attest
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f  # v3.2.0
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6  # v4.2.2
         with:
           subject-path: dist/release/*.tar.gz
+      - name: Plik podpisu do wydania
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          archive=$(ls dist/release/ksef-*-linux-${{ matrix.arch }}.tar.gz)
+          cp "$BUNDLE" "$archive.sigstore.json"
       - name: Dołączenie do szkicu wydania
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" dist/release/*.tar.gz dist/release/*.tar.gz.sha256
+        run: gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" dist/release/*.tar.gz dist/release/*.tar.gz.sha256 dist/release/*.tar.gz.sigstore.json
