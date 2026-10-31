@@ -1,3 +1,5 @@
+default_install_hook_types: [pre-commit, commit-msg]
+default_stages: [pre-commit]
 # Lokalna bramka przed commitem. Instalacja: make hooks; ręcznie na całym repo: make lint.
 # Oficjalne pliki MF (schemas/, stylesheets/) i kod z xscgen (src/Ksef.Fa3/Generated/) zostają bajt w bajt.
 minimum_pre_commit_version: "3.0.0"
@@ -28,6 +30,18 @@ repos:
         entry: gitleaks git --pre-commit --staged --redact --no-banner
         language: system
         pass_filenames: false
+      # Lista wzorców poza repo (~/.config/ksef-cli/private-patterns) — zob. scripts/check-private-data.sh.
+      - id: no-private-data
+        name: bez danych prywatnych (NIP-y firm, wewnętrzne serwery)
+        entry: scripts/check-private-data.sh
+        language: script
+        pass_filenames: false
+        always_run: true
+      - id: no-private-data-message
+        name: bez danych prywatnych w opisie commita
+        entry: scripts/check-private-data.sh
+        language: script
+        stages: [commit-msg]
       - id: no-certificates
         name: bez certyfikatów i kluczy (.pfx/.p12/.pem/.key)
         entry: certyfikaty i klucze nie trafiają do repo
