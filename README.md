@@ -41,7 +41,7 @@ $ ksef show faktura.xml -e prod --ksef-number 1234563218-20261031-0A1B2C3D4E5F-6
 
 ```bash
 # 1. Instalacja (x64; dla arm64: linux-arm64; macOS: docs/INSTALL.md#macos)
-v=0.1.3 a=linux-x64
+v=0.1.4 a=linux-x64
 curl -LO https://github.com/kprzybys/ksef-cli/releases/download/v$v/ksef-$v-$a.tar.gz{,.sha256}
 sha256sum -c ksef-$v-$a.tar.gz.sha256 && tar -xzf ksef-$v-$a.tar.gz
 install -Dm755 ksef-$v-$a/ksef ~/.local/bin/ksef
