@@ -39,30 +39,45 @@ $ ksef show faktura.xml -e prod --ksef-number 1234563218-20261031-0A1B2C3D4E5F-6
 
 ## Szybki start
 
+Bloki poleceń są bez komentarzy, więc wklejają się tak samo do basha i do zsh (macOS).
+
+**1. Instalacja.** Linux x64; dla arm64 wpisz `a=linux-arm64`, macOS: [docs/INSTALL.md](docs/INSTALL.md#macos).
+`ksef status` sprawdza, czy KSeF działa (komunikaty Latarni MF).
+
 ```bash
-# 1. Instalacja (x64; dla arm64: linux-arm64; macOS: docs/INSTALL.md#macos)
 v=0.1.4 a=linux-x64
-curl -LO https://github.com/kprzybys/ksef-cli/releases/download/v$v/ksef-$v-$a.tar.gz{,.sha256}
+curl -L --remote-name-all https://github.com/kprzybys/ksef-cli/releases/download/v$v/ksef-$v-$a.tar.gz{,.sha256}
 sha256sum -c ksef-$v-$a.tar.gz.sha256 && tar -xzf ksef-$v-$a.tar.gz
 install -Dm755 ksef-$v-$a/ksef ~/.local/bin/ksef
-ksef status                                  # czy KSeF działa (komunikaty Latarni MF)
-
-# 2. Środowisko testowe MF: certyfikat testowy i logowanie (fikcyjny NIP)
-ksef cert new --nip 5908996669 -o ~/.config/ksef/test-cert.pem
-ksef login --nip 5908996669 --cert ~/.config/ksef/test-cert.pem
-
-# 3. Faktury
-ksef validate faktura.xml                    # cisza = poprawna
-ksef send faktura.xml                        # numer KSeF, plik, numer sesji
-ksef list --subject seller                   # faktury wystawione (domyślnie: otrzymane)
+ksef status
 ```
 
-Z prawdziwą firmą — token wygenerowany w Aplikacji Podatnika KSeF (link na [ksef.podatki.gov.pl](https://ksef.podatki.gov.pl/)):
+**2. Środowisko testowe MF:** certyfikat testowy i logowanie (fikcyjny NIP).
 
 ```bash
-ksef -e prod login --nip <NIP> --token-file token.txt   # albo z menedżera haseł przez stdin: --token-file -
-ksef -e prod list                                       # odczyt jest bezpieczny
-ksef validate faktura.xml && ksef -e prod send faktura.xml   # UWAGA: wysłana = wystawiona, nie da się cofnąć
+mkdir -p ~/.config/ksef
+ksef cert new --nip 5908996669 -o ~/.config/ksef/test-cert.pem
+ksef login --nip 5908996669 --cert ~/.config/ksef/test-cert.pem
+```
+
+**3. Faktury.** `validate` milczy, gdy faktura jest poprawna; `send` wypisuje numer KSeF, plik i numer sesji;
+`list` domyślnie pokazuje faktury otrzymane, `--subject seller` — wystawione.
+
+```bash
+ksef validate faktura.xml
+ksef send faktura.xml
+ksef list --subject seller
+```
+
+Z prawdziwą firmą — token wygenerowany w Aplikacji Podatnika KSeF (link na [ksef.podatki.gov.pl](https://ksef.podatki.gov.pl/)).
+Zamiast przykładowego `1234563218` wpisz NIP firmy. Token można też podać z menedżera haseł przez stdin
+(`--token-file -`); odczyt (`list`) jest bezpieczny.
+**Uwaga:** wysłana faktura jest wystawiona, nie da się tego cofnąć.
+
+```bash
+ksef -e prod login --nip 1234563218 --token-file token.txt
+ksef -e prod list
+ksef validate faktura.xml && ksef -e prod send faktura.xml
 ```
 
 Wysyłkę najpierw przećwicz na `-e demo` (próba generalna MF, prawdziwe logowanie, faktury bez skutków prawnych).
@@ -90,12 +105,15 @@ Opcje, formaty wyjścia, kody wyjścia i wszystkie metody logowania: [docs/COMMA
 
 ## Przykłady
 
+Pobranie otrzymanych faktur z bieżącego miesiąca (już pobrane pomija); wysyłka z UPO każdej faktury;
+suma brutto wystawionych; logowanie tokenem z menedżera haseł; podgląd HTML dla nabywcy spoza KSeF.
+
 ```bash
-ksef list | ksef get -d otrzymane/                           # otrzymane w tym miesiącu; już pobrane pomija
-ksef send faktury/*.xml | tee wyslane.tsv | ksef upo -d upo/ # wysyłka + UPO każdej faktury
+ksef list | ksef get -d otrzymane/
+ksef send faktury/*.xml | tee wyslane.tsv | ksef upo -d upo/
 ksef list --subject seller --json | jq 'map(.grossAmount) | add'
 pass show ksef/token | ksef -e prod login --nip 1234563218 --token-file -
-ksef show faktura.xml -e prod -k "$(cut -f1 wyslane.tsv)" -o faktura.html   # dla nabywcy poza KSeF
+ksef show faktura.xml -e prod -k "$(cut -f1 wyslane.tsv)" -o faktura.html
 ```
 
 ## Zakres i ograniczenia

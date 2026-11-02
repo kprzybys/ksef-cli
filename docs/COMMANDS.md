@@ -73,6 +73,7 @@ Samo `ksef` bez komendy pokazuje te trzy środowiska i pierwsze kroki.
 ## Logowanie
 
 ```bash
+mkdir -p ~/.config/ksef
 ksef cert new --nip 5908996669 -o ~/.config/ksef/test-cert.pem   # raz; tylko TEST
 ksef login --nip 5908996669 --cert ~/.config/ksef/test-cert.pem
 ksef session
