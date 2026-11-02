@@ -65,12 +65,16 @@ Od wersji 0.1.4: `ksef-<wersja>-osx-arm64.tar.gz` (Apple Silicon) i `osx-x64` (I
 potrzebuje (ICU, kryptografia, libxslt), jest w systemie — bez Homebrew i bez pakietów. Binarka deklaruje
 macOS 12 lub nowszy; testy przechodzą na macOS 15 (CI, oba procesory).
 
+Na Macu z procesorem Intel w pierwszym wierszu wpisz `a=osx-x64`. Blok jest bez komentarzy, więc wkleja się
+do zsh bez zmian w ustawieniach (zob. niżej). Jeśli `~/.local/bin` nie ma w `PATH`, dopisz go do `~/.zshrc`:
+`export PATH="$HOME/.local/bin:$PATH"`.
+
 ```bash
-v=0.1.4 a=osx-arm64   # Intel: osx-x64
-curl -LO https://github.com/kprzybys/ksef-cli/releases/download/v$v/ksef-$v-$a.tar.gz{,.sha256}
+v=0.1.4 a=osx-arm64
+curl -L --remote-name-all https://github.com/kprzybys/ksef-cli/releases/download/v$v/ksef-$v-$a.tar.gz{,.sha256}
 shasum -a 256 -c ksef-$v-$a.tar.gz.sha256 && tar -xzf ksef-$v-$a.tar.gz
-mkdir -p ~/.local/bin && install -m755 ksef-$v-$a/ksef ~/.local/bin/ksef   # ~/.local/bin dopisz do PATH
-ksef --help
+mkdir -p ~/.local/bin && install -m755 ksef-$v-$a/ksef ~/.local/bin/ksef
+~/.local/bin/ksef --help
 ```
 
 - **Gatekeeper.** Binarka nie jest jeszcze notaryzowana przez Apple. Pobrana przez `curl` (jak wyżej) uruchamia się
