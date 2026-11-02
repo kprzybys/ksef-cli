@@ -67,7 +67,7 @@ macOS 12 lub nowszy; testy przechodzą na macOS 15 (CI, oba procesory).
 
 ```bash
 v=0.1.4 a=osx-arm64   # Intel: osx-x64
-curl -LO https://github.com/kprzybys/ksef-cli/releases/download/v$v/ksef-$v-$a.tar.gz{,.sha256}
+curl -L --remote-name-all https://github.com/kprzybys/ksef-cli/releases/download/v$v/ksef-$v-$a.tar.gz{,.sha256}
 shasum -a 256 -c ksef-$v-$a.tar.gz.sha256 && tar -xzf ksef-$v-$a.tar.gz
 mkdir -p ~/.local/bin && install -m755 ksef-$v-$a/ksef ~/.local/bin/ksef   # ~/.local/bin dopisz do PATH
 ksef --help
