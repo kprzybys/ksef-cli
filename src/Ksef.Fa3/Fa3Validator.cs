@@ -8,6 +8,7 @@ public static class Fa3Validator
     {
         List<Fa3ValidationError> errors = [.. KsefDocumentRules.Check(xml)];
         errors.AddRange(Fa3Schema.Validate(new MemoryStream(xml)));
+        errors.AddRange(Fa3VatArithmetic.Check(xml));
         return errors;
     }
 }
