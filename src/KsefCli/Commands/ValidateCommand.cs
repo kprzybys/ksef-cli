@@ -5,7 +5,7 @@ using Ksef.Fa3;
 namespace KsefCli.Commands;
 
 /// <summary>
-/// `ksef validate` — kontrola pliku faktury przed wysyłką: wymagania KSeF + schemat FA(3), offline.
+/// `ksef validate` — kontrola pliku faktury przed wysyłką: wymagania KSeF + schemat FA(3) + arytmetyka VAT, offline.
 /// Przy sukcesie milczy; błędy idą na stderr w formacie `plik:wiersz:kolumna: ...` (jak kompilatory).
 /// </summary>
 public static class ValidateCommand
@@ -26,7 +26,7 @@ public static class ValidateCommand
         };
         Option<bool> jsonOption = CliIo.JsonOption();
 
-        Command command = new("validate", "Sprawdza plik(i) XML faktury: wymagania KSeF (kodowanie, znaki, rozmiar) i schemat FA(3), bez sieci");
+        Command command = new("validate", "Sprawdza plik(i) XML faktury: wymagania KSeF (kodowanie, znaki, rozmiar), schemat FA(3) i arytmetykę VAT, bez sieci");
         command.Arguments.Add(filesArgument);
         command.Options.Add(verboseOption);
         command.Options.Add(jsonOption);

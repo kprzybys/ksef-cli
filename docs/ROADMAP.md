@@ -21,7 +21,7 @@ potoki, sekrety nigdy w argumentach.
 - [ ] `ksef export --state PLIK` — eksport asynchroniczny (paczki ZIP) z przyrostowym pobieraniem od HWM i jawnym
   plikiem stanu; wynik do potoku (`| ksef get`). MF zaleca eksport zamiast serii pojedynczych pobrań (limit 64/h).
 - [ ] Sesja wsadowa: `ksef send --batch`, automatycznie dla faktur z `Zalacznik` (wysyłanych tylko wsadowo).
-- [ ] `validate`: arytmetyka `P_13_x` / `P_14_x` / `P_15` w groszach z tolerancją 1 gr (od sum i od wierszy),
+- [ ] `validate` (częściowo: P_13_x↔P_11 i P_14_x↔P_13_x×stawka dla VAT, grupy 1–3): arytmetyka `P_13_x` / `P_14_x` / `P_15` w groszach z tolerancją 1 gr (od sum i od wierszy),
   z osobną semantyką dla ZAL/ROZ/KOR i stałymi kodami błędów w `--json` — bez fałszywych alarmów na poprawnych
   fakturach (wzór reguł: walidator ksefuj, Apache-2.0).
 - [ ] Błędy w `--json` na stderr z polami `ksef_code`, `trace_id` i podpowiedzią dla znanych kodów KSeF.
