@@ -42,7 +42,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="System.CommandLine" Version="2.0.14" />
+    <PackageReference Include="System.CommandLine" Version="3.0.0" />
     <!-- KSeF.Client 2.9.0 ciągnie 10.0.10 z lukami DoS (CVE-2026-96958/96959/96960, -84008, -70162; poprawione w 10.0.13).
          Usunąć, gdy biblioteka MF podbije zależności. -->
     <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.14" />
